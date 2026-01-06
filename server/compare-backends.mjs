@@ -13,7 +13,7 @@
  *   node compare-backends.mjs 's("bd sd hh sd")' 4
  */
 
-import { execSync, spawn } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -46,7 +46,7 @@ function ensureTmpDir() {
 
 function killSuperCollider() {
   try {
-    execSync('pkill -f "sclang|scsynth" 2>/dev/null', { stdio: 'ignore' });
+    execSync('pkill -9 sclang 2>/dev/null; pkill -9 scsynth 2>/dev/null; true', { stdio: 'ignore', timeout: 5000 });
   } catch (e) {
     // Ignore errors - process may not exist
   }
@@ -61,12 +61,16 @@ async function renderWebAudio(pattern, outputPath, duration) {
   writeFileSync(patternFile, pattern);
   
   try {
-    // Use render-pattern-realtime.mjs instead of render-pattern.mjs
-    // because the offline renderer doesn't support AudioWorklet synths (pulse, supersaw)
-    execSync(
-      `node render-pattern-realtime.mjs "${patternFile}" "${outputPath}" ${duration}`,
-      { cwd: __dirname, stdio: 'pipe', timeout: duration * 1000 + 60000 }
-    );
+    const result = spawnSync('node', ['render-pattern-realtime.mjs', patternFile, outputPath, String(duration)], {
+      cwd: __dirname,
+      timeout: duration * 1000 + 60000,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    
+    if (result.status !== 0) {
+      console.error(`  WebAudio render failed (exit ${result.status})`);
+      return false;
+    }
     return true;
   } catch (e) {
     console.error(`  WebAudio render failed: ${e.message}`);
@@ -85,13 +89,19 @@ async function renderSuperCollider(pattern, outputPath, duration) {
   await sleep(2000);
   
   try {
-    execSync(
-      `node render-pattern-sc.mjs "${patternFile}" "${outputPath}" ${duration}`,
-      { cwd: __dirname, stdio: 'pipe', timeout: 120000 }
-    );
+    const result = spawnSync('node', ['render-pattern-sc.mjs', patternFile, outputPath, String(duration)], {
+      cwd: __dirname,
+      timeout: 120000,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    
+    if (result.status !== 0) {
+      console.error(`  SuperCollider render failed (exit ${result.status})`);
+      return false;
+    }
     return true;
   } catch (e) {
-    console.error(`  SuperCollider render failed: ${e.message}`);
+    console.error(`  SuperCollider render error: ${e.message}`);
     return false;
   } finally {
     try { unlinkSync(patternFile); } catch (e) {}
@@ -100,19 +110,16 @@ async function renderSuperCollider(pattern, outputPath, duration) {
 }
 
 function parseComparisonOutput(output) {
-  // Extract key metrics from compare-audio.py output
   const rmsMatch = output.match(/RMS \(dB\)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+([+-]?[\d.]+)/);
   const peakMatch = output.match(/Peak \(dB\)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+([+-]?[\d.]+)/);
   const similarityMatch = output.match(/Similarity Score:\s+([\d.]+)/);
   const spectralCorrMatch = output.match(/Spectral:\s+([-\d.]+)/);
   const centroidMatch = output.match(/Centroid \(Hz\)\s+(\d+)\s+(\d+)\s+([+-]?\d+)/);
-  
-  // Extract dominant frequencies from detailed stats
   const waFreqsMatch = output.match(/File 1 Dominant Frequencies:\s*([^\n]+)/);
   const scFreqsMatch = output.match(/File 2 Dominant Frequencies:\s*([^\n]+)/);
   
   if (!rmsMatch && !peakMatch && !similarityMatch) {
-    return null; // No valid data found
+    return null;
   }
   
   return {
@@ -135,9 +142,7 @@ function parseComparisonOutput(output) {
 }
 
 function compareAudio(waFile, scFile) {
-  // Check if Python venv exists
   const pythonCmd = existsSync(PYTHON_VENV) ? PYTHON_VENV : 'python3';
-  // Always use --verbose to get spectral info (helps diagnose algorithm vs gain issues)
   const cmd = `"${pythonCmd}" "${COMPARE_SCRIPT}" "${waFile}" "${scFile}" --align --trim --verbose`;
   
   try {
@@ -151,11 +156,6 @@ function compareAudio(waFile, scFile) {
     
     return parseComparisonOutput(output) || { success: false, error: 'No metrics found in output' };
   } catch (e) {
-    // compare-audio.py exits with non-zero codes to indicate comparison results:
-    //   exit 0 = files are similar
-    //   exit 1 = issues detected (differences found)
-    //   exit 2 = files are very different
-    // The stdout still contains valid comparison data, so parse it
     if (e.stdout) {
       const output = e.stdout.toString();
       const result = parseComparisonOutput(output);
@@ -164,7 +164,6 @@ function compareAudio(waFile, scFile) {
       }
     }
     
-    // Real error (e.g., file not found, Python crash)
     return { 
       success: false, 
       error: e.message, 
@@ -206,7 +205,6 @@ async function testPattern(name, pattern, duration) {
     console.log(`    Peak: WA=${result.waPeak?.toFixed(1)}dB  SC=${result.scPeak?.toFixed(1)}dB  Diff=${result.peakDiff >= 0 ? '+' : ''}${result.peakDiff?.toFixed(1)}dB`);
     console.log(`    Similarity: ${result.similarity?.toFixed(1)}/100`);
     
-    // Show spectral info - helps diagnose algorithm vs gain issues
     if (result.spectralCorr != null) {
       const spectralQuality = result.spectralCorr > 0.95 ? 'Excellent' : 
                               result.spectralCorr > 0.8 ? 'Good' : 
@@ -214,7 +212,6 @@ async function testPattern(name, pattern, duration) {
       console.log(`    Spectral correlation: ${result.spectralCorr.toFixed(3)} (${spectralQuality})`);
     }
     
-    // Show dominant frequencies if spectral correlation is poor (likely algorithm issue)
     if (result.spectralCorr != null && result.spectralCorr < 0.8) {
       console.log(`\n  ⚠ Low spectral correlation - possible algorithm mismatch!`);
       if (result.waFreqs) console.log(`    WA dominant freqs: ${result.waFreqs}`);
@@ -236,7 +233,6 @@ async function main() {
   let patterns = [];
   
   if (args.length === 0 || args[0] === '--all') {
-    // Run all default patterns
     patterns = DEFAULT_PATTERNS;
   } else if (args[0] === '--help' || args[0] === '-h') {
     console.log(`
@@ -255,7 +251,6 @@ Examples:
 `);
     process.exit(0);
   } else {
-    // Single pattern mode
     const pattern = args[0];
     const duration = parseFloat(args[1]) || 2;
     patterns = [{ name: 'custom', pattern, duration }];
@@ -284,7 +279,6 @@ Examples:
       const rmsDiff = r.rmsDiff >= 0 ? `+${r.rmsDiff.toFixed(1)}` : r.rmsDiff.toFixed(1);
       const peakDiff = r.peakDiff >= 0 ? `+${r.peakDiff.toFixed(1)}` : r.peakDiff.toFixed(1);
       const spectral = r.spectralCorr != null ? r.spectralCorr.toFixed(2) : 'N/A';
-      // Flag low spectral correlation with a warning
       const spectralFlag = r.spectralCorr != null && r.spectralCorr < 0.8 ? '⚠' : ' ';
       console.log(
         `${r.name.padEnd(16)} ${rmsDiff.padStart(8)}dB  ${peakDiff.padStart(8)}dB   ${spectral.padStart(5)}${spectralFlag}  ${r.similarity?.toFixed(1).padStart(5)}/100`
@@ -294,7 +288,6 @@ Examples:
     }
   }
   
-  // Check if all patterns are within acceptable tolerance
   const rmsDiffs = results.filter(r => r.success && r.rmsDiff != null).map(r => r.rmsDiff);
   if (rmsDiffs.length > 0) {
     const avgRmsDiff = rmsDiffs.reduce((a, b) => a + b, 0) / rmsDiffs.length;
@@ -311,7 +304,6 @@ Examples:
     }
   }
   
-  // Cleanup
   killSuperCollider();
 }
 
