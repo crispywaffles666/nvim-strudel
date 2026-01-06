@@ -58,6 +58,9 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | LPF envelope | `s("bd").lpf(500).lpenv(2).lpdecay(0.5)` | 0.99 | 96.7% | Excellent |
 | LPF env negative | `s("saw").lpf(2000).lpenv(-2)` | 1.00 | 94.6% | Good |
 | BPF | `s("saw").bpf(500).bpq(5)` | 0.96 | 81.6% | Fair |
+| BPF envelope | `s("bd").bpf(1000).bpenv(2).bpdecay(0.5)` | 0.95 | 77.4% | Fair |
+| 24dB LPF | `note("c4").s("saw").lpf(500).ftype("24db")` | 1.00 | 93.9% | Good |
+| 24dB HPF | `note("c4").s("saw").hpf(800).ftype("24db")` | 0.98 | 83.4% | Fair |
 
 ### Tremolo
 
@@ -75,6 +78,13 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Attack | `s("saw").attack(0.2)` | 1.00 | 94.7% | Good |
 | Decay + Sustain | `s("saw").decay(0.3).sustain(0.5)` | 1.00 | 93.3% | Good |
 | Full ADSR | `s("saw").attack(0.1).decay(0.2).sustain(0.7).release(0.3)` | 1.00 | 93.5% | Good |
+
+### Pitch Modulation
+
+| Feature | Pattern | Spectral | Similarity | Status |
+|---------|---------|----------|------------|--------|
+| Vibrato | `note("c4").s("sine").vib(4)` | 1.00 | 98.1% | Excellent |
+| Vibrato + depth | `note("c4").s("saw").vib(4).vibmod(1)` | 0.99 | 92.7% | Good |
 
 ### Effects
 
@@ -113,12 +123,13 @@ Based on tested features (excluding noise which is inherently random):
 |----------|---------------|--------|
 | Samples | 93.7% | Good |
 | Synths | 91.1% | Good |
-| Filters | 88.0% | Good |
+| Filters | 87.4% | Good |
 | Tremolo | 96.7% | Excellent |
 | ADSR | 93.8% | Good |
+| Pitch Mod | 95.4% | Excellent |
 | Effects | 89.6% | Good |
 | Noise | RMS ±0.5dB | Excellent (level-matched) |
-| **Overall** | **92.1%** | **Good** |
+| **Overall** | **92.4%** | **Good** |
 
 ---
 
@@ -128,7 +139,6 @@ Based on tested features (excluding noise which is inherently random):
 
 | Feature | Controls | Difficulty | Notes |
 |---------|----------|------------|-------|
-| Vibrato | `vib`, `vibmod` | Easy | Simple pitch LFO |
 | Pitch Envelope | `penv`, `pattack`, `pdecay`, `psustain`, `prelease`, `panchor` | Medium | Similar to filter env |
 | FM Synthesis | `fmi`, `fmh`, `fmenv`, `fmattack`, `fmdecay`, `fmsustain`, `fmrelease` | Hard | Frequency modulation |
 | Pulse Width Mod | `pw`, `pwrate`, `pwsweep` | Medium | PWM on pulse wave |
@@ -138,9 +148,7 @@ Based on tested features (excluding noise which is inherently random):
 | Feature | Controls | Difficulty | Notes |
 |---------|----------|------------|-------|
 | Ladder Filter | `ftype('ladder')` | Medium | Moog-style 24dB filter |
-| 24dB Filter | `ftype('24db')` | Easy | Cascade two 12dB filters |
 | DJF | `djf` | Medium | DJ-style low/high morph |
-| Bandpass Envelope | `bpenv`, `bpattack`, `bpdecay`, etc. | Easy | Same as LP/HP env |
 
 ### Low Priority (specialized)
 
@@ -187,6 +195,18 @@ cd server && node compare-backends.mjs --all
 ---
 
 ## Changelog
+
+### 2026-01-06 (Session 3)
+- Implemented 24dB filter mode (`ftype('24db')`)
+  - LPF: 93.9% similarity
+  - HPF: 83.4% similarity
+  - Cascades two 12dB filters for steeper slope
+- Implemented vibrato for synths (`vib`, `vibmod`)
+  - Sine: 98.1% similarity
+  - Saw: 92.7% similarity
+  - Works on sine, saw, square, triangle, pulse, supersaw
+- Implemented bandpass envelope (`bpenv`, `bpattack`, `bpdecay`, `bpsustain`, `bprelease`)
+  - 77.4% similarity - functional but BPF has slight gain differences
 
 ### 2026-01-06 (Session 2)
 - Fixed synth envelope architecture - removed double ADSR application

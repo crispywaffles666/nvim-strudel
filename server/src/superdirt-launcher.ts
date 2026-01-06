@@ -202,9 +202,14 @@ s.waitForBoot {
     // 'sustain' param is the note duration (set by osc-output.ts)
     // Line.kr with doneAction:2 frees the synth after sustain time
     // Filtering is handled by the strudel_filter module (not in individual synths)
-    SynthDef(\\strudel_sine, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      sound = SinOsc.ar(freq * speed);
+    // Vibrato: vib = LFO rate in Hz, vibmod = depth in semitones (default 0.5)
+    SynthDef(\\strudel_sine, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
+      var sound, vibFreq;
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
+      sound = SinOsc.ar(vibFreq);
       // Free synth after sustain time (envelope applied by strudel_adsr module)
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
@@ -215,9 +220,14 @@ s.waitForBoot {
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
     // RMS compensation: SC's Saw.ar has lower RMS than Web Audio's normalized sawtooth
     // due to band-limiting. Factor of 2.0 matches RMS levels between the two backends.
-    SynthDef(\\strudel_sawtooth, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      sound = Saw.ar(freq * speed) * 2.0;  // RMS compensation for band-limited Saw
+    // Vibrato: vib = LFO rate in Hz, vibmod = depth in semitones (default 0.5)
+    SynthDef(\\strudel_sawtooth, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
+      var sound, vibFreq;
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
+      sound = Saw.ar(vibFreq) * 2.0;  // RMS compensation for band-limited Saw
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -225,9 +235,13 @@ s.waitForBoot {
     
     // Alias for sawtooth (superdough uses 'saw')
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_saw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      sound = Saw.ar(freq * speed) * 2.0;  // RMS compensation for band-limited Saw
+    SynthDef(\\strudel_saw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
+      var sound, vibFreq;
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
+      sound = Saw.ar(vibFreq) * 2.0;  // RMS compensation for band-limited Saw
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -236,9 +250,13 @@ s.waitForBoot {
     // Square wave oscillator
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
     // RMS compensation: SC's Pulse.ar has lower RMS than Web Audio's normalized square
-    SynthDef(\\strudel_square, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      sound = Pulse.ar(freq * speed, 0.5) * 1.9;  // RMS compensation for band-limited Pulse
+    SynthDef(\\strudel_square, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
+      var sound, vibFreq;
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
+      sound = Pulse.ar(vibFreq, 0.5) * 1.9;  // RMS compensation for band-limited Pulse
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -246,18 +264,26 @@ s.waitForBoot {
     
     // Triangle wave oscillator
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_triangle, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      sound = LFTri.ar(freq * speed);
+    SynthDef(\\strudel_triangle, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
+      var sound, vibFreq;
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
+      sound = LFTri.ar(vibFreq);
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
     "Added: strudel_triangle".postln;
     // Alias for triangle (superdough uses 'tri')
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_tri, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      sound = LFTri.ar(freq * speed);
+    SynthDef(\\strudel_tri, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
+      var sound, vibFreq;
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
+      sound = LFTri.ar(vibFreq);
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -395,15 +421,21 @@ s.waitForBoot {
     // ========================================
     
     SynthDef(\\strudel_pulse, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                pw = 0.5, pwrate = 1, pwsweep = 0|
-      var sound, width;
+                                pw = 0.5, pwrate = 1, pwsweep = 0, vib = 0, vibmod = 0.5|
+      var sound, width, vibFreq;
+      
+      // Vibrato: pitch LFO
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
       
       // Pulse width modulation: pw oscillates around the base pw value
       width = pw + (SinOsc.kr(pwrate) * pwsweep);
       width = width.clip(0.01, 0.99);  // Prevent aliasing at extremes
       
       // Gain of 0.7 tuned to match browser superdough output level
-      sound = Pulse.ar(freq * speed, width) * 0.7;
+      sound = Pulse.ar(vibFreq, width) * 0.7;
       
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
@@ -418,8 +450,14 @@ s.waitForBoot {
     // ========================================
     
     SynthDef(\\strudel_supersaw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   unison = 5, spread = 0.6, detune = 0.18|
-      var sound, voices, freqs, pans, gainAdjust;
+                                   unison = 5, spread = 0.6, detune = 0.18, vib = 0, vibmod = 0.5|
+      var sound, voices, freqs, pans, gainAdjust, vibFreq;
+      
+      // Vibrato: pitch LFO applied to base frequency
+      vibFreq = Select.kr(vib > 0, [
+        freq * speed,
+        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      ]);
       
       // Clamp unison to reasonable range (1-16 for performance)
       voices = unison.clip(1, 16);
@@ -428,7 +466,7 @@ s.waitForBoot {
       // Spread them evenly from -detune to +detune semitones
       freqs = Array.fill(16, { |i|
         var detuneAmount = (i - (voices - 1) / 2) / (voices.max(2) - 1) * 2;
-        freq * speed * (2 ** (detuneAmount * detune / 12))
+        vibFreq * (2 ** (detuneAmount * detune / 12))
       });
       
       // Pan spread: voices spread from -spread to +spread
@@ -449,7 +487,7 @@ s.waitForBoot {
       Line.kr(0, 0, sustain, doneAction: 2);
 
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\kr, \\kr]).add;
     "Added: strudel_supersaw".postln;
     
     // ========================================
@@ -552,7 +590,7 @@ s.waitForBoot {
     
     // ========================================
     // Strudel Filter Module (for SAMPLES and SYNTHS)
-    // Applies HPF/LPF filtering when strudelHpf/strudelLpf params are present
+    // Applies HPF/LPF/BPF filtering when strudelHpf/strudelLpf/strudelBpf params are present
     // Uses custom parameter names to avoid triggering SuperDirt's dirt_lpf/dirt_hpf modules
     // This is a single module that handles all filtering, rather than duplicating
     // filter code in every SynthDef
@@ -561,11 +599,11 @@ s.waitForBoot {
     // At extreme values (LPF at 20kHz, HPF at 20Hz), filters are essentially transparent.
     //
     // Filter envelope support:
-    // - strudelLpEnv/strudelHpEnv: envelope amount in octaves (can be negative)
-    // - strudelLpAttack/strudelHpAttack: attack time
-    // - strudelLpDecay/strudelHpDecay: decay time  
-    // - strudelLpSustain/strudelHpSustain: sustain level (0-1)
-    // - strudelLpRelease/strudelHpRelease: release time
+    // - strudelLpEnv/strudelHpEnv/strudelBpEnv: envelope amount in octaves (can be negative)
+    // - strudelLpAttack/strudelHpAttack/strudelBpAttack: attack time
+    // - strudelLpDecay/strudelHpDecay/strudelBpDecay: decay time  
+    // - strudelLpSustain/strudelHpSustain/strudelBpSustain: sustain level (0-1)
+    // - strudelLpRelease/strudelHpRelease/strudelBpRelease: release time
     // - strudelFanchor: anchor point (0=env sweeps up from cutoff, 1=sweeps down, 0.5=centered)
     // ========================================
     
@@ -573,15 +611,19 @@ s.waitForBoot {
                                                  strudelLpf = 20000, strudelHpf = 20,
                                                  strudelLpq = 1, strudelHpq = 1,
                                                  strudelBpf = 0, strudelBpq = 1,
-                                                 strudelLpEnv = 0, strudelHpEnv = 0,
+                                                 strudelLpEnv = 0, strudelHpEnv = 0, strudelBpEnv = 0,
                                                  strudelLpAttack = 0.005, strudelLpDecay = 0.14,
                                                  strudelLpSustain = 0, strudelLpRelease = 0.1,
                                                  strudelHpAttack = 0.005, strudelHpDecay = 0.14,
                                                  strudelHpSustain = 0, strudelHpRelease = 0.1,
-                                                 strudelFanchor = 0|
+                                                 strudelBpAttack = 0.005, strudelBpDecay = 0.14,
+                                                 strudelBpSustain = 0, strudelBpRelease = 0.1,
+                                                 strudelFanchor = 0,
+                                                 strudelFtype = 0|
       var signal, rqLpf, rqHpf, rqBpf, lpfFreq, hpfFreq, bpfFreq;
-      var lpfEnvFreq, hpfEnvFreq, lpfEnv, hpfEnv;
-      var lpfEnvAbs, hpfEnvAbs, lpfOffset, hpfOffset, lpfMin, lpfMax, hpfMin, hpfMax;
+      var lpfEnvFreq, hpfEnvFreq, bpfEnvFreq, lpfEnv, hpfEnv, bpfEnv;
+      var lpfEnvAbs, hpfEnvAbs, bpfEnvAbs, lpfOffset, hpfOffset, bpfOffset;
+      var lpfMin, lpfMax, hpfMin, hpfMax, bpfMin, bpfMax;
       
       signal = In.ar(out, ${channels});
       
@@ -638,20 +680,50 @@ s.waitForBoot {
       ]);
       hpfEnvFreq = Select.kr(strudelHpEnv.abs > 0.001, [hpfFreq, hpfEnvFreq]);
       
+      // BPF envelope
+      bpfEnvAbs = strudelBpEnv.abs;
+      bpfOffset = bpfEnvAbs * strudelFanchor;
+      bpfMin = (bpfFreq * (2 ** bpfOffset.neg)).clip(20, 20000);
+      bpfMax = (bpfFreq * (2 ** (bpfEnvAbs - bpfOffset))).clip(20, 20000);
+      bpfEnv = EnvGen.kr(
+        Env.adsr(strudelBpAttack, strudelBpDecay, strudelBpSustain, strudelBpRelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      bpfEnvFreq = Select.kr(strudelBpEnv < 0, [
+        bpfEnv.linexp(0, 1, bpfMin.max(20), bpfMax.max(20)),
+        bpfEnv.linexp(0, 1, bpfMax.max(20), bpfMin.max(20))
+      ]);
+      bpfEnvFreq = Select.kr(strudelBpEnv.abs > 0.001, [bpfFreq, bpfEnvFreq]);
+      
       // Apply filters
       // LPF and HPF always applied (with neutral defaults: LPF=20000, HPF=20)
+      // strudelFtype: 0 = 12dB/oct (single filter), 1 = 24dB/oct (cascade two filters)
       signal = RLPF.ar(signal, lpfEnvFreq, rqLpf);
+      signal = Select.ar(strudelFtype > 0, [
+        signal,
+        RLPF.ar(signal, lpfEnvFreq, rqLpf)  // Second pass for 24dB slope
+      ]);
+      
       signal = RHPF.ar(signal, hpfEnvFreq, rqHpf);
+      signal = Select.ar(strudelFtype > 0, [
+        signal,
+        RHPF.ar(signal, hpfEnvFreq, rqHpf)  // Second pass for 24dB slope
+      ]);
       
       // BPF only applied when strudelBpf > 0 (default is 0 = disabled)
+      // Uses envelope-modulated frequency
+      // Also cascades when strudelFtype > 0 for 24dB slope
       signal = Select.ar(strudelBpf > 0, [
         signal,
-        BPF.ar(signal, bpfFreq, rqBpf)
+        Select.ar(strudelFtype > 0, [
+          BPF.ar(signal, bpfEnvFreq, rqBpf),
+          BPF.ar(BPF.ar(signal, bpfEnvFreq, rqBpf), bpfEnvFreq, rqBpf)  // Cascade for 24dB
+        ])
       ]);
       
       ReplaceOut.ar(out, signal);
-    }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
-    "Added: strudel_filter${channels} (with envelope support and BPF)".postln;
+    }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    "Added: strudel_filter${channels} (with envelope support, BPF, and 24dB mode)".postln;
     
     // Register the strudel_filter module with SuperDirt
     // This module triggers when strudelLpf, strudelHpf, or strudelBpf parameters are present
@@ -669,6 +741,7 @@ s.waitForBoot {
             strudelBpq: ~strudelBpq ? 1,
             strudelLpEnv: ~strudelLpEnv ? 0,
             strudelHpEnv: ~strudelHpEnv ? 0,
+            strudelBpEnv: ~strudelBpEnv ? 0,
             strudelLpAttack: ~strudelLpAttack ? 0.005,
             strudelLpDecay: ~strudelLpDecay ? 0.14,
             strudelLpSustain: ~strudelLpSustain ? 0,
@@ -677,11 +750,16 @@ s.waitForBoot {
             strudelHpDecay: ~strudelHpDecay ? 0.14,
             strudelHpSustain: ~strudelHpSustain ? 0,
             strudelHpRelease: ~strudelHpRelease ? 0.1,
+            strudelBpAttack: ~strudelBpAttack ? 0.005,
+            strudelBpDecay: ~strudelBpDecay ? 0.14,
+            strudelBpSustain: ~strudelBpSustain ? 0,
+            strudelBpRelease: ~strudelBpRelease ? 0.1,
             strudelFanchor: ~strudelFanchor ? 0,
+            strudelFtype: ~strudelFtype ? 0,
             out: ~out
           ])
       }, { ~strudelLpf.notNil || ~strudelHpf.notNil || ~strudelBpf.notNil });
-    "*** Strudel filter module registered (with envelope support and BPF) ***".postln;
+    "*** Strudel filter module registered (with envelope support, BPF, and 24dB mode) ***".postln;
     
     // ========================================
     // Strudel Tremolo Module (for SAMPLES and SYNTHS)

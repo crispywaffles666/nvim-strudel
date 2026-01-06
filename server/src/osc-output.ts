@@ -746,10 +746,44 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     delete controls.hprelease;
   }
   
+  // Handle filter envelope parameters for bandpass filter
+  // superdough uses: bpenv (amount in octaves), bpattack, bpdecay, bpsustain, bprelease
+  if (controls.bpenv !== undefined) {
+    controls.strudelBpEnv = controls.bpenv;
+    delete controls.bpenv;
+  }
+  if (controls.bpattack !== undefined) {
+    controls.strudelBpAttack = controls.bpattack;
+    delete controls.bpattack;
+  }
+  if (controls.bpdecay !== undefined) {
+    controls.strudelBpDecay = controls.bpdecay;
+    delete controls.bpdecay;
+  }
+  if (controls.bpsustain !== undefined) {
+    controls.strudelBpSustain = controls.bpsustain;
+    delete controls.bpsustain;
+  }
+  if (controls.bprelease !== undefined) {
+    controls.strudelBpRelease = controls.bprelease;
+    delete controls.bprelease;
+  }
+  
   // Filter anchor point (0-1, where envelope pivots around cutoff frequency)
   if (controls.fanchor !== undefined) {
     controls.strudelFanchor = controls.fanchor;
     delete controls.fanchor;
+  }
+  
+  // Filter type: '12db' (default) or '24db' (cascade two filters for steeper slope)
+  // superdough also supports 'ladder' but that requires a different filter model
+  if (controls.ftype !== undefined) {
+    if (controls.ftype === '24db') {
+      controls.strudelFtype = 1;  // 24dB mode - cascade filters
+    } else {
+      controls.strudelFtype = 0;  // 12dB mode (default)
+    }
+    delete controls.ftype;
   }
   
   // Convert gain to SuperDirt's gain curve (applies to all synth sounds)
