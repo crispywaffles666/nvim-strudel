@@ -20,6 +20,26 @@ export interface SampleMapping {
   midi: number;
 }
 
+/** Zone info for soundfonts - specifies which MIDI range maps to which sample */
+export interface SoundfontZone {
+  /** Sample index in the bank */
+  index: number;
+  /** Original MIDI pitch of the sample */
+  midi: number;
+  /** Lowest MIDI note this zone handles */
+  keyRangeLow: number;
+  /** Highest MIDI note this zone handles */
+  keyRangeHigh: number;
+  /** Loop start position in frames (for sustain looping) */
+  loopStart?: number;
+  /** Loop end position in frames (for sustain looping) */
+  loopEnd?: number;
+  /** Sample rate (for converting frames to time) */
+  sampleRate?: number;
+  /** Total sample length in frames (for normalizing loop positions) */
+  sampleLength?: number;
+}
+
 export interface BankMetadata {
   /** Bank name (e.g., "piano") */
   name: string;
@@ -31,6 +51,8 @@ export interface BankMetadata {
   sampleCount: number;
   /** True if this is a soundfont (needs envelope) */
   isSoundfont?: boolean;
+  /** For soundfonts: zone mappings with keyRange info */
+  zones?: SoundfontZone[];
 }
 
 // Global registry of bank metadata
@@ -158,17 +180,19 @@ export function isBankSoundfont(bankName: string): boolean {
  * For a pitched bank, calculate the sample index (n) and speed adjustment
  * to play a given MIDI note.
  * 
- * Strategy: Find the closest sample and calculate speed ratio
+ * For soundfonts: Uses zone keyRange mapping (matches WebAudio behavior)
+ * For regular pitched samples: Finds closest sample by MIDI distance
+ * 
  * speed = 2^((targetMidi - sampleMidi) / 12)
  * 
  * @param bankName The sample bank name
  * @param targetMidi The MIDI note to play
- * @returns { n, speed } or null if bank not found/not pitched
+ * @returns { n, speed, loopBegin?, loopEnd? } or null if bank not found/not pitched
  */
 export function calculateNAndSpeed(
   bankName: string,
   targetMidi: number
-): { n: number; speed: number } | null {
+): { n: number; speed: number; loopBegin?: number; loopEnd?: number } | null {
   const metadata = bankRegistry.get(bankName);
   
   if (!metadata) {
@@ -176,8 +200,71 @@ export function calculateNAndSpeed(
     return null;
   }
   
-  if (!metadata.isPitched || !metadata.sampleMidiNotes) {
+  if (!metadata.isPitched) {
     // Non-pitched bank - don't adjust, just return null to skip processing
+    return null;
+  }
+  
+  // For soundfonts with zones, use keyRange matching (like WebAudio's findZone)
+  if (metadata.isSoundfont && metadata.zones && metadata.zones.length > 0) {
+    // Find zone by keyRange (matches superdough's findZone behavior exactly)
+    // Note: superdough/fontloader.mjs uses: zone.keyRangeLow <= pitch && zone.keyRangeHigh + 1 >= pitch
+    // The +1 on keyRangeHigh is important for correct zone selection!
+    const zone = metadata.zones.find(z => 
+      z.keyRangeLow <= targetMidi && z.keyRangeHigh + 1 >= targetMidi
+    );
+    
+    if (zone) {
+      const speed = Math.pow(2, (targetMidi - zone.midi) / 12);
+      const result: { n: number; speed: number; loopBegin?: number; loopEnd?: number } = { 
+        n: zone.index, 
+        speed 
+      };
+      
+      // Include loop points if the zone has them (as normalized 0-1 positions)
+      if (zone.loopStart !== undefined && zone.loopEnd !== undefined && zone.sampleLength) {
+        // Use actual sample length for accurate normalization
+        result.loopBegin = zone.loopStart / zone.sampleLength;
+        result.loopEnd = zone.loopEnd / zone.sampleLength;
+      }
+      
+      return result;
+    }
+    
+    // Fallback: find closest zone if target is outside all ranges
+    let closestZone = metadata.zones[0];
+    let closestDistance = Math.min(
+      Math.abs(targetMidi - closestZone.keyRangeLow),
+      Math.abs(targetMidi - closestZone.keyRangeHigh)
+    );
+    
+    for (const z of metadata.zones) {
+      const dist = Math.min(
+        Math.abs(targetMidi - z.keyRangeLow),
+        Math.abs(targetMidi - z.keyRangeHigh)
+      );
+      if (dist < closestDistance) {
+        closestDistance = dist;
+        closestZone = z;
+      }
+    }
+    
+    const speed = Math.pow(2, (targetMidi - closestZone.midi) / 12);
+    const result: { n: number; speed: number; loopBegin?: number; loopEnd?: number } = { 
+      n: closestZone.index, 
+      speed 
+    };
+    
+    if (closestZone.loopStart !== undefined && closestZone.loopEnd !== undefined && closestZone.sampleLength) {
+      result.loopBegin = closestZone.loopStart / closestZone.sampleLength;
+      result.loopEnd = closestZone.loopEnd / closestZone.sampleLength;
+    }
+    
+    return result;
+  }
+  
+  // For regular pitched samples, find closest by MIDI distance
+  if (!metadata.sampleMidiNotes) {
     return null;
   }
   
@@ -264,6 +351,12 @@ export function processValueForOsc(value: Record<string, any>): Record<string, a
   newValue.n = result.n;
   newValue.speed = (newValue.speed ?? 1) * result.speed;
   
+  // Pass through loop points for soundfont sustain looping
+  if (result.loopBegin !== undefined && result.loopEnd !== undefined) {
+    newValue.loopBegin = result.loopBegin;
+    newValue.loopEnd = result.loopEnd;
+  }
+  
   // Remove params that SuperDirt might misinterpret
   delete newValue.note;
   delete newValue.midinote;
@@ -280,16 +373,18 @@ export function getRegisteredBanks(): string[] {
 }
 
 /**
- * Register a soundfont bank from cached WAV files
+ * Register a soundfont bank from cached WAV files and zone metadata
  * Soundfont files are named like: 000_note24.wav, 001_note51.wav, etc.
  * where the number after "note" is the MIDI pitch for that sample
  * 
  * @param bankName Name of the bank (e.g., "gm_violin")
  * @param filenames Array of filenames in the bank directory
+ * @param zones Optional zone metadata from _zones.json (with keyRange info)
  */
 export function registerSoundfontMetadata(
   bankName: string,
-  filenames: string[]
+  filenames: string[],
+  zones?: SoundfontZone[]
 ): BankMetadata | null {
   // Parse filenames to extract MIDI notes
   // Format: 000_note24.wav -> { index: 0, midi: 24 }
@@ -322,11 +417,13 @@ export function registerSoundfontMetadata(
     sampleMidiNotes,
     sampleCount: sampleMidiNotes.length,
     isSoundfont: true,
+    zones: zones, // Store zone info for keyRange-based sample selection
   };
   
   bankRegistry.set(bankName, metadata);
   
-  console.log(`[sample-metadata] Registered soundfont '${bankName}': ${sampleMidiNotes.length} samples, range MIDI ${sampleMidiNotes[0]}-${sampleMidiNotes[sampleMidiNotes.length - 1]}`);
+  const zoneInfo = zones ? ` (${zones.length} zones)` : '';
+  console.log(`[sample-metadata] Registered soundfont '${bankName}': ${sampleMidiNotes.length} samples, range MIDI ${sampleMidiNotes[0]}-${sampleMidiNotes[sampleMidiNotes.length - 1]}${zoneInfo}`);
   
   return metadata;
 }

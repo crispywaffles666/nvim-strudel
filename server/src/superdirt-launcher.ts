@@ -147,14 +147,21 @@ s.waitForBoot {
     (1..SuperDirt.maxSampleNumChannels).do { |sampleNumChannels|
       var name = format("strudel_soundfont_%_%", sampleNumChannels, ${channels});
       
-      // Soundfont synth: loops sample with ADSR envelope
-      // NOTE: We use custom parameter names (sfAttack, sfRelease, sfSustain) to avoid
-      // SuperDirt's internal parameter handling which overrides standard names
+      // Soundfont synth: plays from start then loops in sustain region, with ADSR envelope
+      // Matches WebAudio BufferSourceNode loop behavior:
+      // 1. Play from buffer start (attack phase)
+      // 2. When reaching loopEnd, jump back to loopStart
+      // 3. Continue looping within [loopStart, loopEnd] until note ends
+      // sfLoopBegin/sfLoopEnd: normalized 0-1 positions for sustain loop region
+      // If no loop points (sfLoopBegin == sfLoopEnd == 0), loops entire sample
       SynthDef(name, { |out, bufnum, sustain = 1, begin = 0, end = 1, speed = 1, endSpeed = 1, 
-                        freq = 440, pan = 0, sfAttack = 0.01, sfRelease = 0.1, sfSustain = 1|
-        var sound, rate, phase, numFrames, env, holdTime, phasorRate;
+                        freq = 440, pan = 0, sfSustain = 1,
+                        sfLoopBegin = 0, sfLoopEnd = 0|
+        var sound, rate, phase, numFrames, env, phasorRate;
+        var hasLoop, loopStartFrame, loopEndFrame, loopLen;
+        var rawPos, loopOffset, modPos;
         
-        numFrames = max(BufFrames.ir(bufnum), 1);
+        numFrames = BufFrames.ir(bufnum).max(1);
         
         // Use speed directly - it's already pitch-adjusted
         rate = Line.kr(speed, endSpeed, sfSustain);
@@ -162,32 +169,128 @@ s.waitForBoot {
         // Phasor rate: samples to advance per audio sample
         phasorRate = rate * BufRateScale.ir(bufnum);
         
-        // Loop through sample using Phasor
-        phase = Phasor.ar(0, phasorRate, begin * numFrames, end * numFrames, begin * numFrames);
+        // Check if we have valid loop points
+        hasLoop = (sfLoopEnd > sfLoopBegin) * (sfLoopEnd > 0);
         
+        // Calculate loop positions in frames
+        loopStartFrame = sfLoopBegin * numFrames;
+        loopEndFrame = sfLoopEnd * numFrames;
+        loopLen = (loopEndFrame - loopStartFrame).max(1);
+        
+        // Simpler approach: use Phasor that counts continuously, then apply modular arithmetic
+        // rawPos tracks continuous position (never resets)
+        rawPos = Phasor.ar(0, phasorRate, 0, 1e9, 0);
+        
+        // Calculate how much past loopEndFrame we are (0 before loopEnd)
+        loopOffset = (rawPos - loopEndFrame).max(0);
+        
+        // In loop phase: loopStartFrame + (offset % loopLen)
+        // In attack phase: rawPos (when loopOffset is 0)
+        modPos = loopStartFrame + (loopOffset % loopLen);
+        
+        // Select: if in attack phase (rawPos < loopEndFrame), use rawPos; else use modPos
+        // We use a soft comparison to avoid artifacts
+        phase = Select.ar(hasLoop, [
+          // No loop points: simple non-looping playback
+          Phasor.ar(0, phasorRate, begin * numFrames, end * numFrames, begin * numFrames),
+          // Has loop points: use rawPos until loopEnd, then loop
+          // This uses the fact that when rawPos < loopEndFrame, loopOffset = 0
+          // and modPos = loopStartFrame, so we need to choose rawPos instead
+          Select.ar(rawPos >= loopEndFrame, [
+            rawPos,     // Attack phase: play from start  
+            modPos      // Loop phase: modular position in loop region
+          ])
+        ]);
+        
+        // Use linear interpolation (2) to match WebAudio's simple 2-point interpolation
+        // WebAudio uses linear interpolation for pitch-shifted playback, not sinc or cubic
+        // (verified by examining Chromium's audio_buffer_source_handler.cc)
         sound = BufRd.ar(
           numChannels: sampleNumChannels,
           bufnum: bufnum,
           phase: phase,
-          loop: 1,
-          interpolation: 4
+          loop: 0,
+          interpolation: 2
         );
         
-        // ADSR envelope using our custom params
-        holdTime = max(0.001, sfSustain - sfAttack - sfRelease);
+        // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
+        // This envelope is flat (level=1) and just controls synth duration via doneAction
+        // The actual amplitude shaping happens in the common strudel_adsr module
         env = EnvGen.kr(
-          Env.linen(sfAttack, holdTime, sfRelease, 1, \\sin),
+          Env.new([1, 1], [sfSustain + 0.1], \lin),
           doneAction: 2
         );
         
         sound = sound * env;
-        sound = DirtPan.ar(sound, ${channels}, pan);
+        // DirtPan applies Balance2 for stereo, reducing each channel by sqrt(0.5) at center.
+        // For mono samples (which get panned to stereo via Pan2), this -3dB is compensated
+        // by sqrt(2) gain boost in osc-output.ts when no pan is specified.
+        //
+        // Stereo soundfont samples need an EXTRA sqrt(2) multiplier here because:
+        // - WebAudio only adds a StereoPannerNode when pan is explicitly set
+        // - When pan is undefined, WebAudio passes stereo through unchanged (no -3dB)
+        // - But SuperDirt always applies DirtPan, even for stereo samples
+        // - So soundfonts get an extra -3dB that needs compensation in the synth itself
+        //
+        // This sqrt(2) in the synth + the sqrt(2) in osc-output.ts (for no-pan case)
+        // together cancel out Balance2's -3dB and add the expected center boost.
+        sound = DirtPan.ar(sound, ${channels}, pan) * sqrt(2);
         
         Out.ar(out, sound)
-      }, [\\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir]).add;
+      }, [\ir, \ir, \ir, \ir, \ir, \ir, \ir, \ir, \kr, \ir, \ir, \ir]).add;
       
       ("Strudel: Added " ++ name).postln;
     };
+    
+    // ========================================
+    // Soundfont Diversion - bypasses SuperDirt's hardcoded sample args
+    // SuperDirt's 'sound' module hardcodes the args it passes to sample synths,
+    // which means our sfLoopBegin/sfLoopEnd params never reach the synth.
+    // This diversion intercepts soundfont instruments and plays them with all params.
+    // ========================================
+    
+    // Set up a diversion for soundfont instruments within the 'sound' module
+    // The sound module checks ~diversion.value first - if it returns non-nil, 
+    // the module skips its hardcoded args processing.
+    // This is different from the event-level ~diversion in defaultParentEvent.
+    // We set ~diversion in the soundEvent (returned by getEvent) for our soundfont samples.
+    //
+    // When SuperDirt loads our samples, we register them with a custom soundEvent
+    // that includes the diversion function to pass sfLoopBegin/sfLoopEnd.
+    //
+    // Alternative approach: Override how the sound module processes soundfont instruments
+    // by adding a module that runs BEFORE 'sound' and sets ~diversion for soundfonts.
+    ~dirt.addModule('strudel_soundfont_diversion',
+      { |dirtEvent|
+        // Only for soundfont instruments, set up a diversion that passes all params
+        if(~instrument.asString.beginsWith("strudel_soundfont") and: { ~buffer.notNil }, {
+          // Instead of setting ~diversion (which requires the sound module to call it),
+          // we play the synth directly and set a flag to skip sound module
+          var desc = SynthDescLib.global.at(~instrument.asSymbol);
+          if(desc.notNil, {
+            // Set ~bufnum from ~buffer so msgFunc.valueEnvir finds it
+            ~bufnum = ~buffer;
+            dirtEvent.sendSynth(~instrument, desc.msgFunc.valueEnvir);
+            // IMPORTANT: Set ~buffer to nil so sound module doesn't also play
+            ~buffer = nil;
+            // Also set ~diversion to skip sound module (belt and suspenders)
+            ~diversion = { true };
+          });
+        });
+      },
+      { ~instrument.asString.beginsWith("strudel_soundfont") }  // test function
+    );
+    "*** Soundfont diversion module added (passes sfLoopBegin/sfLoopEnd to synth) ***".postln;
+    
+    // Note: Module ordering is done later after all modules are added
+    // (see orderModules call after strudel_tremolo module)
+    
+    // Add specs for the loop params
+    Spec.add(\\sfLoopBegin, [0, 1]);
+    Spec.add(\\sfLoopEnd, [0, 1]);
+    Spec.add(\\sfAttack, [0.001, 10, \\exp]);
+    Spec.add(\\sfRelease, [0.001, 10, \\exp]);
+    Spec.add(\\sfSustain, [0.001, 60, \\exp]);
     
     s.sync;  // Ensure soundfont SynthDefs are registered with server
     "*** Strudel soundfont SynthDefs loaded ***".postln;
@@ -1104,7 +1207,9 @@ s.waitForBoot {
     
     // Re-order modules to put strudel modules BEFORE out_to
     // Without this, our modules run AFTER the signal is sent to output
+    // strudel_soundfont_diversion MUST come BEFORE sound to set ~diversion
     ~dirt.orderModules([
+        'strudel_soundfont_diversion',  // Sets ~diversion for soundfonts BEFORE sound runs
         'sound', 'vowel', 'shape', 'hpf', 'bpf', 'crush', 'coarse', 'lpf',
         'pshift', 'envelope', 'grenvelo', 'tremolo', 'phaser', 'waveloss',
         'squiz', 'fshift', 'triode', 'krush', 'octer', 'ring', 'distort',
@@ -1116,7 +1221,7 @@ s.waitForBoot {
         'strudel_filter',    // Our filter module
         'out_to', 'map_from'
     ]);
-    "*** Module order updated (strudel modules before out_to) ***".postln;
+    "*** Module order updated (strudel_soundfont_diversion before sound, strudel modules before out_to) ***".postln;
     
     s.sync;
     

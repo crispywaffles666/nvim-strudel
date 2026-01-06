@@ -6,7 +6,7 @@
  * This keeps initial startup fast while ensuring sounds are ready when needed.
  */
 
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { loadSoundfontForSuperDirt, isSoundfontCached } from './soundfont-loader.js';
@@ -291,7 +291,28 @@ function registerSoundfontFromCache(name: string): void {
   
   const files = readdirSync(bankDir).filter(f => f.endsWith('.wav'));
   if (files.length > 0) {
-    registerSoundfontMetadata(name, files);
+    // Try to load zones metadata for proper keyRange-based sample selection
+    const zonesPath = join(bankDir, '_zones.json');
+    let zones: Array<{ 
+      index: number; 
+      midi: number; 
+      keyRangeLow: number; 
+      keyRangeHigh: number;
+      loopStart?: number;
+      loopEnd?: number;
+      sampleRate?: number;
+      sampleLength?: number;
+    }> | undefined;
+    
+    if (existsSync(zonesPath)) {
+      try {
+        zones = JSON.parse(readFileSync(zonesPath, 'utf-8'));
+      } catch (err) {
+        console.warn(`[on-demand] Failed to read zones for ${name}:`, err);
+      }
+    }
+    
+    registerSoundfontMetadata(name, files, zones);
   }
 }
 

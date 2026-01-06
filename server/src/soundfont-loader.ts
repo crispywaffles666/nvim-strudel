@@ -37,6 +37,11 @@ interface ZoneMetadata {
   midi: number;
   keyRangeLow: number;
   keyRangeHigh: number;
+  loopStart?: number;   // Loop start in frames
+  loopEnd?: number;     // Loop end in frames
+  sampleRate?: number;  // Sample rate for converting frames to time
+  sampleLength?: number; // Total sample length in frames (for normalizing loop positions)
+  tuneOffset?: number;  // Tuning offset in cents (coarseTune*100 + fineTune) for accurate pitch calculation
 }
 
 /**
@@ -132,8 +137,9 @@ async function downloadSoundfont(fontName: string): Promise<SoundfontZone[]> {
 
 /**
  * Convert base64 audio data to WAV file
+ * @returns Sample length in frames, or 0 on failure
  */
-function base64ToWav(base64Data: string, outputPath: string): boolean {
+function base64ToWav(base64Data: string, outputPath: string): number {
   try {
     // Decode base64 to binary
     const binaryData = Buffer.from(base64Data, 'base64');
@@ -142,7 +148,7 @@ function base64ToWav(base64Data: string, outputPath: string): boolean {
     const tempPath = outputPath.replace('.wav', '.tmp.mp3');
     writeFileSync(tempPath, binaryData);
     
-    // Convert to WAV using ffmpeg
+    // Convert to WAV using ffmpeg at 44100 Hz
     execSync(`ffmpeg -y -i "${tempPath}" -ar 44100 -ac 2 "${outputPath}" 2>/dev/null`, {
       stdio: 'ignore',
     });
@@ -152,10 +158,22 @@ function base64ToWav(base64Data: string, outputPath: string): boolean {
       execSync(`rm "${tempPath}"`, { stdio: 'ignore' });
     } catch {}
     
-    return true;
+    // Get sample length using ffprobe
+    try {
+      const durationStr = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`,
+        { encoding: 'utf-8' }
+      ).trim();
+      const duration = parseFloat(durationStr);
+      const sampleLength = Math.round(duration * 44100); // Convert to frames at 44100 Hz
+      return sampleLength;
+    } catch (probeErr) {
+      console.warn(`[soundfont-loader] Failed to get sample length:`, probeErr);
+      return 1; // Return non-zero to indicate success
+    }
   } catch (err) {
     console.error(`[soundfont-loader] Failed to convert:`, err);
-    return false;
+    return 0;
   }
 }
 
@@ -196,7 +214,7 @@ async function findBestFontVariant(fontNames: string[]): Promise<string | null> 
 /**
  * Load a single soundfont instrument for SuperDirt
  * @param instrumentName The GM instrument name (e.g., "gm_piano")
- * @param fontNames Array of font variants to try (will pick the one with most samples)
+ * @param fontNames Array of font variants - uses fonts[0] to match WebAudio default
  */
 export async function loadSoundfontForSuperDirt(
   instrumentName: string,
@@ -224,10 +242,10 @@ export async function loadSoundfontForSuperDirt(
   // Convert single font name to array
   const fontNameArray = Array.isArray(fontNames) ? fontNames : [fontNames];
   
-  // Find the best variant (with most samples)
-  const fontName = await findBestFontVariant(fontNameArray);
+  // Use fonts[0] to match WebAudio behavior (superdough uses getSoundIndex which defaults to 0)
+  const fontName = fontNameArray[0];
   if (!fontName) {
-    console.error(`[soundfont-loader] No valid font found for ${instrumentName}`);
+    console.error(`[soundfont-loader] No font found for ${instrumentName}`);
     return false;
   }
   
@@ -275,13 +293,34 @@ export async function loadSoundfontForSuperDirt(
     const paddedIndex = String(savedCount).padStart(3, '0');
     const outputPath = join(bankDir, `${paddedIndex}_note${originalMidi}.wav`);
     
-    if (base64ToWav(zone.file, outputPath)) {
-      zoneMetadata.push({
+    const sampleLength = base64ToWav(zone.file, outputPath);
+    if (sampleLength > 0) {
+      // Include loop points if present (for sustain looping)
+      const zoneMeta: ZoneMetadata = {
         index: savedCount,
         midi: originalMidi,
         keyRangeLow: zone.keyRangeLow,
         keyRangeHigh: zone.keyRangeHigh,
-      });
+      };
+      
+      // Add tuning offset if present (coarseTune is in semitones, fineTune is in cents)
+      // This matches WebAudio's calculation: baseDetune = originalPitch - 100*coarseTune - fineTune
+      // tuneOffset = 100*coarseTune + fineTune (in cents)
+      const tuneOffset = (zone.coarseTune || 0) * 100 + (zone.fineTune || 0);
+      if (tuneOffset !== 0) {
+        zoneMeta.tuneOffset = tuneOffset;
+      }
+      
+      // Add loop points if the zone has them
+      if (zone.loopStart !== undefined && zone.loopEnd !== undefined && 
+          zone.loopStart > 1 && zone.loopStart < zone.loopEnd) {
+        zoneMeta.loopStart = zone.loopStart;
+        zoneMeta.loopEnd = zone.loopEnd;
+        zoneMeta.sampleRate = zone.sampleRate;
+        zoneMeta.sampleLength = sampleLength;
+      }
+      
+      zoneMetadata.push(zoneMeta);
       savedCount++;
     }
   }

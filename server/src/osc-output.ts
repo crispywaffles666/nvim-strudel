@@ -558,17 +558,43 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     // Soundfont samples are stereo (converted by ffmpeg with -ac 2)
     controls.instrument = 'strudel_soundfont_2_2';
     
-    // Use custom parameter names (sfAttack, sfRelease, sfSustain) to avoid
-    // SuperDirt's internal parameter handling which overrides standard names
-    if (controls.sfAttack == null) controls.sfAttack = controls.attack ?? 0.01;
-    if (controls.sfRelease == null) controls.sfRelease = controls.release ?? 0.1;
-    // sfSustain controls how long the note plays (use note duration from pattern)
-    // Note: Strudel's 'sustain' param is the sustain LEVEL (0-1), not duration!
-    // We always use delta (note duration) for sfSustain
+    // sfSustain controls how long the synth plays (for doneAction timing)
+    // This is the note duration, not sustain level
     if (controls.sfSustain == null) controls.sfSustain = delta;
     
+    // Pass through loop points for sample-accurate sustain looping
+    // These come from processValueForOsc via calculateNAndSpeed
+    // loopBegin/loopEnd are normalized 0-1 positions within the sample
+    if (controls.loopBegin !== undefined && controls.loopEnd !== undefined) {
+      controls.sfLoopBegin = controls.loopBegin;
+      controls.sfLoopEnd = controls.loopEnd;
+      delete controls.loopBegin;
+      delete controls.loopEnd;
+    }
+    
+    // Calculate ADSR envelope values matching superdough's getADSRValues behavior
+    // This ensures soundfonts go through the same strudel_adsr module as other sounds
+    const patternSustainLevel = typeof rawValue.sustain === 'number' ? rawValue.sustain : undefined;
+    const [envAttack, envDecay, envSustainLevel, envRelease] = getADSRValues(
+      controls.attack,
+      controls.decay,
+      patternSustainLevel,
+      controls.release
+    );
+    
+    // Calculate hold time: duration - attack - decay (release extends past note end)
+    const holdTime = Math.max(0.001, delta - envAttack - envDecay);
+    
+    // Use our custom strudelEnv* params to trigger strudel_adsr module
+    // This gives us consistent ADSR behavior matching superdough
+    controls.strudelEnvAttack = envAttack;
+    controls.strudelEnvDecay = envDecay;
+    controls.strudelEnvSustainLevel = envSustainLevel;
+    controls.strudelEnvRelease = envRelease;
+    controls.strudelEnvHold = holdTime;
+    
     // IMPORTANT: Delete standard envelope params so SuperDirt's core modules
-    // don't apply their own envelope on top of our custom SynthDef's envelope.
+    // don't apply their own envelope on top of our strudel_adsr envelope.
     // Without this, sustain=0 (sustain LEVEL) causes SuperDirt to mute the sound.
     delete controls.attack;
     delete controls.decay;
@@ -636,6 +662,9 @@ function hapToOscArgs(hap: any, cps: number): any[] {
   // NOTE: ZZFX synths are excluded from pan compensation because their gain staging
   // is already calibrated differently (0.25 baked in vs 0.3 for regular synths).
   // Empirically, ZZFX without pan compensation matches better.
+  //
+  // All sounds using DirtPan (samples, synths, soundfonts) get the -3dB reduction
+  // at center and need sqrt(2) compensation when no pan is specified.
   const isZZFX = synthSoundMap[soundName]?.includes('zzfx');
   if (rawValue.pan === undefined && !isZZFX) {
     // No pan specified - SuperDirt will center with -3dB, compensate with sqrt(2)
@@ -882,7 +911,8 @@ export function sendHapToSuperDirt(hap: any, targetTime: number, cps: number): v
       // Show our strudel ADSR params (strudelEnv*) instead of old attack/decay/release
       const strudelEnvStr = argsObj.strudelEnvAttack !== undefined ? 
         ` env(A=${argsObj.strudelEnvAttack?.toFixed?.(3)} D=${argsObj.strudelEnvDecay?.toFixed?.(3)} S=${argsObj.strudelEnvSustainLevel?.toFixed?.(2)} R=${argsObj.strudelEnvRelease?.toFixed?.(3)} H=${argsObj.strudelEnvHold?.toFixed?.(3)})` : '';
-      const sfEnvStr = argsObj.sfSustain !== undefined ? ` sfAttack=${argsObj.sfAttack?.toFixed?.(3)} sfRelease=${argsObj.sfRelease?.toFixed?.(3)} sfSustain=${argsObj.sfSustain?.toFixed?.(3)}` : '';
+      const sfEnvStr = argsObj.sfSustain !== undefined ? ` sfSustain=${argsObj.sfSustain?.toFixed?.(3)}` : '';
+      const sfLoopStr = argsObj.sfLoopBegin !== undefined ? ` loop=${argsObj.sfLoopBegin?.toFixed?.(4)}-${argsObj.sfLoopEnd?.toFixed?.(4)}` : '';
       const instrStr = argsObj.instrument ? ` instrument=${argsObj.instrument}` : '';
       const orbitStr = argsObj.orbit !== undefined ? ` orbit=${argsObj.orbit}` : ' orbit=MISSING';
       // Show strudel filter params (strudelLpf/Hpf) instead of old cutoff/hcutoff
@@ -898,7 +928,7 @@ export function sendHapToSuperDirt(hap: any, targetTime: number, cps: number): v
       // Show filter envelope params if present
       const lpEnvStr = argsObj.strudelLpEnv !== undefined ? ` lpenv=${argsObj.strudelLpEnv} lpdecay=${argsObj.strudelLpDecay?.toFixed?.(2)}` : '';
       const hpEnvStr = argsObj.strudelHpEnv !== undefined ? ` hpenv=${argsObj.strudelHpEnv}` : '';
-      console.log(`[osc] SEND: s=${argsObj.s} n=${argsObj.n}${orbitStr} speed=${speedStr}${freqStr}${sustainStr}${sustainLevelStr}${noteStr}${lpfStr}${lpEnvStr}${lpqStr}${hpfStr}${hpEnvStr}${hpqStr}${shapeStr}${zshapeStr}${zgainStr}${tremStr}${strudelEnvStr}${sfEnvStr}${instrStr} gain=${argsObj.gain?.toFixed?.(2)}${ampStr} t+${secondsFromNow.toFixed(3)}s`);
+      console.log(`[osc] SEND: s=${argsObj.s} n=${argsObj.n}${orbitStr} speed=${speedStr}${freqStr}${sustainStr}${sustainLevelStr}${noteStr}${lpfStr}${lpEnvStr}${lpqStr}${hpfStr}${hpEnvStr}${hpqStr}${shapeStr}${zshapeStr}${zgainStr}${tremStr}${strudelEnvStr}${sfEnvStr}${sfLoopStr}${instrStr} gain=${argsObj.gain?.toFixed?.(2)}${ampStr} t+${secondsFromNow.toFixed(3)}s`);
       
       // Debug: print all OSC args to verify strudelEnv* params are sent
       if (argsObj.strudelEnvSustainLevel !== undefined) {
