@@ -605,6 +605,45 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     controls.gain = controls.gain * Math.SQRT2;
   }
   
+  // Convert filter parameters to strudel* prefixed names
+  // This avoids triggering SuperDirt's built-in dirt_lpf/dirt_hpf modules, which
+  // would apply ADDITIONAL filtering on top of our strudel_filter module.
+  // Using strudel* params ensures only our module handles filtering (consistent 12 dB/oct slope).
+  // This applies to all sounds: synths, samples, and soundfonts.
+  if (controls.cutoff !== undefined) {
+    controls.strudelLpf = controls.cutoff;
+    delete controls.cutoff;
+  }
+  if (controls.hcutoff !== undefined) {
+    controls.strudelHpf = controls.hcutoff;
+    delete controls.hcutoff;
+  }
+  if (controls.resonance !== undefined) {
+    controls.strudelLpq = controls.resonance;
+    delete controls.resonance;
+  }
+  if (controls.hresonance !== undefined) {
+    controls.strudelHpq = controls.hresonance;
+    delete controls.hresonance;
+  }
+  // Also handle lpf/hpf aliases that superdough uses
+  if (controls.lpf !== undefined && controls.strudelLpf === undefined) {
+    controls.strudelLpf = controls.lpf;
+    delete controls.lpf;
+  }
+  if (controls.hpf !== undefined && controls.strudelHpf === undefined) {
+    controls.strudelHpf = controls.hpf;
+    delete controls.hpf;
+  }
+  if (controls.lpq !== undefined && controls.strudelLpq === undefined) {
+    controls.strudelLpq = controls.lpq;
+    delete controls.lpq;
+  }
+  if (controls.hpq !== undefined && controls.strudelHpq === undefined) {
+    controls.strudelHpq = controls.hpq;
+    delete controls.hpq;
+  }
+  
   // Convert gain to SuperDirt's gain curve (applies to all synth sounds)
   controls.gain = convertGainForSuperDirt(controls.gain);
 
@@ -686,13 +725,17 @@ export function sendHapToSuperDirt(hap: any, targetTime: number, cps: number): v
       const sfEnvStr = argsObj.sfSustain !== undefined ? ` sfAttack=${argsObj.sfAttack?.toFixed?.(3)} sfRelease=${argsObj.sfRelease?.toFixed?.(3)} sfSustain=${argsObj.sfSustain?.toFixed?.(3)}` : '';
       const instrStr = argsObj.instrument ? ` instrument=${argsObj.instrument}` : '';
       const orbitStr = argsObj.orbit !== undefined ? ` orbit=${argsObj.orbit}` : ' orbit=MISSING';
-      const cutoffStr = argsObj.cutoff !== undefined ? ` cutoff=${argsObj.cutoff?.toFixed?.(0)}` : '';
+      // Show strudel filter params (strudelLpf/Hpf) instead of old cutoff/hcutoff
+      const lpfStr = argsObj.strudelLpf !== undefined ? ` lpf=${argsObj.strudelLpf?.toFixed?.(0)}` : '';
+      const hpfStr = argsObj.strudelHpf !== undefined ? ` hpf=${argsObj.strudelHpf?.toFixed?.(0)}` : '';
+      const lpqStr = argsObj.strudelLpq !== undefined ? ` lpq=${argsObj.strudelLpq?.toFixed?.(2)}` : '';
+      const hpqStr = argsObj.strudelHpq !== undefined ? ` hpq=${argsObj.strudelHpq?.toFixed?.(2)}` : '';
       const shapeStr = argsObj.shape !== undefined ? ` shape=${argsObj.shape?.toFixed?.(2)}` : '';
       const zshapeStr = argsObj.zshape !== undefined ? ` zshape=${argsObj.zshape}` : '';
       const zgainStr = argsObj.zgain !== undefined ? ` zgain=${argsObj.zgain?.toFixed?.(2)}` : '';
       const sustainLevelStr = argsObj.sustainLevel !== undefined ? ` sustainLevel=${argsObj.sustainLevel?.toFixed?.(2)}` : '';
       const ampStr = argsObj.amp !== undefined ? ` amp=${argsObj.amp?.toFixed?.(2)}` : '';
-      console.log(`[osc] SEND: s=${argsObj.s} n=${argsObj.n}${orbitStr} speed=${speedStr}${freqStr}${sustainStr}${sustainLevelStr}${noteStr}${cutoffStr}${shapeStr}${zshapeStr}${zgainStr}${tremStr}${strudelEnvStr}${sfEnvStr}${instrStr} gain=${argsObj.gain?.toFixed?.(2)}${ampStr} t+${secondsFromNow.toFixed(3)}s`);
+      console.log(`[osc] SEND: s=${argsObj.s} n=${argsObj.n}${orbitStr} speed=${speedStr}${freqStr}${sustainStr}${sustainLevelStr}${noteStr}${lpfStr}${lpqStr}${hpfStr}${hpqStr}${shapeStr}${zshapeStr}${zgainStr}${tremStr}${strudelEnvStr}${sfEnvStr}${instrStr} gain=${argsObj.gain?.toFixed?.(2)}${ampStr} t+${secondsFromNow.toFixed(3)}s`);
     }
     
     // Send as OSC bundle with timetag for precise scheduling

@@ -120,17 +120,24 @@ let scTemplate = templateMatch[0]
 // Remove the outer ( and ) 
 scTemplate = scTemplate.replace(/^\(/, '').replace(/\)$/, '').trim();
 
-// Extract just the SynthDef sections (everything between "SynthDef" and ".add;")
+// Extract SynthDefs AND module registrations from the template
+// IMPORTANT: We must extract everything up to (but not including) the OSC Handlers section.
+// This includes:
+//   - SynthDefs (strudel_sine, strudel_filter, etc.)
+//   - Module registrations (~dirt.addModule for strudel_adsr, strudel_filter)
+//   - Module ordering (~dirt.orderModules)
+// Without the module registrations, the filter SynthDef exists but is never triggered!
 const synthDefBlocks = [];
 const synthDefRegex = /SynthDef\([^)]+\)\s*\.add;/gs;
 const fullSynthDefRegex = /\/\/[^\n]*\n\s*SynthDef\([\s\S]*?\.add;/g;
 
-// Actually, let's extract everything from the first SynthDef comment to the last .add;
+// Extract from first SynthDef comment to the OSC Handlers section
 const synthDefStart = scTemplate.indexOf('// Strudel Soundfont SynthDefs');
-const synthDefEnd = scTemplate.lastIndexOf('.add;') + 5;
+const synthDefEnd = scTemplate.indexOf('// ========================================\n    // OSC Handlers');
 
 if (synthDefStart === -1 || synthDefEnd < synthDefStart) {
   console.error('Could not extract SynthDef code');
+  console.error('synthDefStart:', synthDefStart, 'synthDefEnd:', synthDefEnd);
   process.exit(1);
 }
 

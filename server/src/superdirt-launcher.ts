@@ -201,9 +201,8 @@ s.waitForBoot {
     // Uses strudelEnv* params for ADSR envelope to avoid SuperDirt's dirt_envelope
     // superdough defaults: attack=0.001, decay=0.05, sustain=0.6 (level), release=0.01
     // 'sustain' param here is the note duration (set by osc-output.ts)
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_sine, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                               cutoff = 20000, hcutoff = 20,
-                               resonance = 1, hresonance = 1,
                                strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                strudelEnvHold = 1|
@@ -218,22 +217,16 @@ s.waitForBoot {
         doneAction: 2
       );
       sound = SinOsc.ar(freq * speed) * env;
-      // Conditional filtering: only apply when user sets explicit values
-      // Use RLPF/RHPF with resonance to match WebAudio BiquadFilterNode behavior
-      // WebAudio uses Q, SC uses rq (reciprocal of Q), so rq = 1/Q
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_sine".postln;
     
     // Sawtooth wave oscillator
     // Uses strudelEnv* params for ADSR envelope to avoid SuperDirt's dirt_envelope
     // RMS compensation: SC's Saw.ar has lower RMS than Web Audio's normalized sawtooth
     // due to band-limiting. Factor of 2.0 matches RMS levels between the two backends.
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_sawtooth, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   cutoff = 20000, hcutoff = 20,
-                                   resonance = 1, hresonance = 1,
                                    strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                    strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                    strudelEnvHold = 1|
@@ -247,17 +240,15 @@ s.waitForBoot {
         doneAction: 2
       );
       sound = Saw.ar(freq * speed) * 2.0 * env;  // RMS compensation for band-limited Saw
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_sawtooth".postln;
     
     // Alias for sawtooth (superdough uses 'saw')
     // Uses strudelEnv* params for ADSR envelope to avoid SuperDirt's dirt_envelope
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_saw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                              cutoff = 20000, hcutoff = 20,
-                              resonance = 1, hresonance = 1,
                               strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                               strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                               strudelEnvHold = 1|
@@ -271,18 +262,16 @@ s.waitForBoot {
         doneAction: 2
       );
       sound = Saw.ar(freq * speed) * 2.0 * env;  // RMS compensation for band-limited Saw
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_saw".postln;
     
     // Square wave oscillator
     // Uses strudelEnv* params for ADSR envelope to avoid SuperDirt's dirt_envelope
     // RMS compensation: SC's Pulse.ar has lower RMS than Web Audio's normalized square
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_square, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                 cutoff = 20000, hcutoff = 20,
-                                 resonance = 1, hresonance = 1,
                                  strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                  strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                  strudelEnvHold = 1|
@@ -296,17 +285,15 @@ s.waitForBoot {
         doneAction: 2
       );
       sound = Pulse.ar(freq * speed, 0.5) * 1.9 * env;  // RMS compensation for band-limited Pulse
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_square".postln;
     
     // Triangle wave oscillator
     // Uses strudelEnv* params for ADSR envelope to avoid SuperDirt's dirt_envelope
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_triangle, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   cutoff = 20000, hcutoff = 20,
-                                   resonance = 1, hresonance = 1,
                                    strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                    strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                    strudelEnvHold = 1|
@@ -320,17 +307,15 @@ s.waitForBoot {
         doneAction: 2
       );
       sound = LFTri.ar(freq * speed) * env;
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_triangle".postln;
     
     // Alias for triangle (superdough uses 'tri')
     // Uses strudelEnv* params for ADSR envelope to avoid SuperDirt's dirt_envelope
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_tri, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                              cutoff = 20000, hcutoff = 20,
-                              resonance = 1, hresonance = 1,
                               strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                               strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                               strudelEnvHold = 1|
@@ -344,17 +329,15 @@ s.waitForBoot {
         doneAction: 2
       );
       sound = LFTri.ar(freq * speed) * env;
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_tri".postln;
     
     // White noise generator
     // Uses strudelEnv* params for ADSR envelope to avoid SuperDirt's dirt_envelope
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_white, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                cutoff = 20000, hcutoff = 20,
-                                resonance = 1, hresonance = 1,
                                 strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                 strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                 strudelEnvHold = 1|
@@ -368,10 +351,9 @@ s.waitForBoot {
         doneAction: 2
       );
       sound = WhiteNoise.ar * env;
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_white".postln;
     
     // Pink noise generator - Paul Kellet algorithm to match superdough
@@ -379,9 +361,8 @@ s.waitForBoot {
     // Superdough uses 6 IIR filters + delayed sample, summed and scaled by 0.11
     // Each filter: y[n] = feedback * y[n-1] + input_gain * x[n]
     // Use FOS.ar(in, a0, a1, b1) = a0*x[n] + a1*x[n-1] + b1*y[n-1]
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_pink, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                               cutoff = 20000, hcutoff = 20,
-                               resonance = 1, hresonance = 1,
                                strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                strudelEnvHold = 1|
@@ -406,10 +387,9 @@ s.waitForBoot {
       b5 = FOS.ar(white, -0.016898, 0, -0.7616);
       b6 = Delay1.ar(white * 0.115926);  // b6 = previous white sample
       sound = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + (white * 0.5362)) * 0.11 * env;
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_pink".postln;
     
     // Brown noise generator - matches superdough algorithm exactly
@@ -418,9 +398,8 @@ s.waitForBoot {
     // This is: y[n] = (1/1.02) * y[n-1] + (0.02/1.02) * x[n]
     //        = 0.9804 * y[n-1] + 0.0196 * x[n]
     // Use FOS.ar(in, a0, a1, b1): y[n] = a0*x[n] + a1*x[n-1] + b1*y[n-1]
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     SynthDef(\\strudel_brown, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                cutoff = 20000, hcutoff = 20,
-                                resonance = 1, hresonance = 1,
                                 strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                 strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                 strudelEnvHold = 1|
@@ -435,10 +414,9 @@ s.waitForBoot {
       );
       // Superdough brown noise: y[n] = 0.9804 * y[n-1] + 0.0196 * x[n]
       sound = FOS.ar(WhiteNoise.ar, 0.0196, 0, 0.9804) * env;
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_brown".postln;
     
     s.sync;  // Ensure oscillator SynthDefs are registered with server
@@ -450,11 +428,10 @@ s.waitForBoot {
     // https://github.com/KilledByAPixel/ZzFX
     // Uses strudelEnv* params for ADSR envelope (like other synths)
     // to avoid double-envelope from SuperDirt's dirt_gate
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     // ========================================
     
     SynthDef(\\strudel_zzfx, { |out, freq = 220, sustain = 1, pan = 0, speed = 1,
-                               cutoff = 20000, hcutoff = 20,
-                               resonance = 1, hresonance = 1,
                                strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                strudelEnvHold = 1,
@@ -551,12 +528,8 @@ s.waitForBoot {
       // Pattern gain is handled via SuperDirt's gain (after convertGainForSuperDirt)
       sound = sound * env * 0.25;
       
-      // Apply filters (only when explicitly set)
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
-      
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir,
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir,
         \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
     "Added: strudel_zzfx".postln;
     
@@ -567,11 +540,10 @@ s.waitForBoot {
     // Pulse Wave Synth with PWM (pulse width modulation)
     // Matches superdough's pulse synth with pw, pwrate, pwsweep params
     // Uses strudelEnv* params for ADSR envelope
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     // ========================================
     
     SynthDef(\\strudel_pulse, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                cutoff = 20000, hcutoff = 20,
-                                resonance = 1, hresonance = 1,
                                 strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                 strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                 strudelEnvHold = 1,
@@ -595,21 +567,19 @@ s.waitForBoot {
       // Gain of 0.7 tuned to match browser superdough output level
       // (superdough uses Tomisawa oscillator with 0.15 gain factor)
       sound = Pulse.ar(freq * speed, width) * 0.7 * env;
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr, \\kr, \\kr]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr, \\kr, \\kr]).add;
     "Added: strudel_pulse".postln;
     
     // ========================================
     // Supersaw Synth - Multiple detuned sawtooth oscillators
     // Matches superdough's supersaw with unison, spread, detune params
     // Uses strudelEnv* params for ADSR envelope
+    // Filtering is handled by the strudel_filter module (not in individual synths)
     // ========================================
     
     SynthDef(\\strudel_supersaw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   cutoff = 20000, hcutoff = 20,
-                                   resonance = 1, hresonance = 1,
                                    strudelEnvAttack = 0.001, strudelEnvDecay = 0.001,
                                    strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
                                    strudelEnvHold = 1,
@@ -648,10 +618,9 @@ s.waitForBoot {
         Pan2.ar(sig, pans[i])
       }) * gainAdjust * 2.0 * env;  // 2.0 = RMS compensation for Saw
       
-      sound = Select.ar(cutoff < 20000, [sound, RLPF.ar(sound, cutoff.clip(20, 20000), (1/resonance.max(0.001)).clip(0.01, 2))]);
-      sound = Select.ar(hcutoff > 20, [sound, RHPF.ar(sound, hcutoff.clip(20, 20000), (1/hresonance.max(0.001)).clip(0.01, 2))]);
+
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr, \\kr]).add;
+    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr, \\kr]).add;
     "Added: strudel_supersaw".postln;
     
     // ========================================
@@ -749,6 +718,74 @@ s.waitForBoot {
           ])
       }, { ~strudelEnvAttack.notNil });
     "*** Strudel ADSR module registered (for samples) ***".postln;
+    
+    s.sync;
+    
+    // ========================================
+    // Strudel Filter Module (for SAMPLES and SYNTHS)
+    // Applies HPF/LPF filtering when strudelHpf/strudelLpf params are present
+    // Uses custom parameter names to avoid triggering SuperDirt's dirt_lpf/dirt_hpf modules
+    // This is a single module that handles all filtering, rather than duplicating
+    // filter code in every SynthDef
+    // 
+    // The filter uses 12dB/octave resonant filters (RLPF/RHPF) to match superdough.
+    // At extreme values (LPF at 20kHz, HPF at 20Hz), filters are essentially transparent.
+    // ========================================
+    
+    SynthDef("strudel_filter" ++ ${channels}, { |out, 
+                                                 strudelLpf = 20000, strudelHpf = 20,
+                                                 strudelLpq = 1, strudelHpq = 1|
+      var signal, rqLpf, rqHpf, lpfFreq, hpfFreq;
+      signal = In.ar(out, ${channels});
+      
+      // Convert Q to rq (reciprocal of Q)
+      // Q = 1 gives rq = 1 (no resonance), Q > 1 gives narrower resonance
+      rqLpf = (1/strudelLpq.max(0.001)).clip(0.01, 2);
+      rqHpf = (1/strudelHpq.max(0.001)).clip(0.01, 2);
+      
+      // Clip frequencies to valid range
+      lpfFreq = strudelLpf.clip(20, 20000);
+      hpfFreq = strudelHpf.clip(20, 20000);
+      
+      // Apply both filters unconditionally - they become transparent at extreme values
+      // Using Select.ar with boolean conditions caused issues; this approach is simpler
+      signal = RLPF.ar(signal, lpfFreq, rqLpf);
+      signal = RHPF.ar(signal, hpfFreq, rqHpf);
+      
+      ReplaceOut.ar(out, signal);
+    }, [\\ir, \\kr, \\kr, \\kr, \\kr]).add;
+    "Added: strudel_filter${channels}".postln;
+    
+    // Register the strudel_filter module with SuperDirt
+    // This module triggers when strudelLpf or strudelHpf parameters are present
+    // and applies our filters INSTEAD of SuperDirt's dirt_lpf/dirt_hpf modules
+    ~dirt.addModule('strudel_filter',
+      { |dirtEvent|
+        dirtEvent.sendSynth('strudel_filter' ++ ${channels},
+          [
+            strudelLpf: ~strudelLpf ? 20000,
+            strudelHpf: ~strudelHpf ? 20,
+            strudelLpq: ~strudelLpq ? 1,
+            strudelHpq: ~strudelHpq ? 1,
+            out: ~out
+          ])
+      }, { ~strudelLpf.notNil || ~strudelHpf.notNil });
+    "*** Strudel filter module registered ***".postln;
+    
+    // Re-order modules to put strudel_adsr and strudel_filter BEFORE out_to
+    // Without this, our modules run AFTER the signal is sent to output
+    ~dirt.orderModules([
+        'sound', 'vowel', 'shape', 'hpf', 'bpf', 'crush', 'coarse', 'lpf',
+        'pshift', 'envelope', 'grenvelo', 'tremolo', 'phaser', 'waveloss',
+        'squiz', 'fshift', 'triode', 'krush', 'octer', 'ring', 'distort',
+        'spectral-delay', 'spectral-freeze', 'spectral-comb', 'spectral-smear',
+        'spectral-scram', 'spectral-binshift', 'spectral-hbrick', 'spectral-lbrick',
+        'spectral-conformer', 'spectral-enhance', 'dj-filter', 'compressor',
+        'strudel_adsr',    // Our ADSR module
+        'strudel_filter',  // Our filter module
+        'out_to', 'map_from'
+    ]);
+    "*** Module order updated (strudel modules before out_to) ***".postln;
     
     s.sync;
     
