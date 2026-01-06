@@ -119,6 +119,10 @@ class ComparisonResult:
     timing1: TimingStats
     timing2: TimingStats
 
+    # Envelope stats
+    envelope1: EnvelopeStats
+    envelope2: EnvelopeStats
+
     # Differences
     peak_diff_db: float
     rms_diff_db: float
@@ -930,6 +934,8 @@ def compare_audio(
         spectral2=spec2,
         timing1=timing1,
         timing2=timing2,
+        envelope1=env_stats1,
+        envelope2=env_stats2,
         peak_diff_db=amp2.peak_db - amp1.peak_db,
         rms_diff_db=amp2.rms_db - amp1.rms_db,
         spectral_centroid_diff_hz=spec2.centroid_hz - spec1.centroid_hz,
@@ -1127,6 +1133,21 @@ def print_report(result: ComparisonResult, verbose: bool = False):
         print(f"\n  No significant issues detected.")
 
     if verbose:
+        print(f"\n--- Envelope Stats ---")
+        print(f"{'':20} {'File 1':>12} {'File 2':>12}")
+        print(
+            f"{'Attack (ms)':20} {result.envelope1.attack_time_ms:>12.1f} {result.envelope2.attack_time_ms:>12.1f}"
+        )
+        print(
+            f"{'Decay (ms)':20} {result.envelope1.decay_time_ms:>12.1f} {result.envelope2.decay_time_ms:>12.1f}"
+        )
+        print(
+            f"{'Sustain Level':20} {result.envelope1.sustain_level:>12.3f} {result.envelope2.sustain_level:>12.3f}"
+        )
+        print(
+            f"{'Release (ms)':20} {result.envelope1.release_time_ms:>12.1f} {result.envelope2.release_time_ms:>12.1f}"
+        )
+
         print(f"\n--- Detailed Stats ---")
         print(f"File 1 DC Offset: {result.amplitude1.dc_offset:.6f}")
         print(f"File 2 DC Offset: {result.amplitude2.dc_offset:.6f}")

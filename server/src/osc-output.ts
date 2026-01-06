@@ -155,14 +155,21 @@ function convertGainForSuperDirt(superdoughGain: number): number {
 }
 
 /**
- * Calculate ADSR values matching Strudel's getADSRValues behavior
+ * Calculate ADSR values matching superdough's getADSRValues behavior
  * Returns [attack, decay, sustain, release] with proper defaults
+ * 
+ * @param attack - Attack time in seconds
+ * @param decay - Decay time in seconds
+ * @param sustain - Sustain level (0-1)
+ * @param release - Release time in seconds
+ * @param defaultValues - Default values if no params specified [attack, decay, sustain, release]
  */
 function getADSRValues(
   attack?: number,
   decay?: number, 
   sustain?: number,
-  release?: number
+  release?: number,
+  defaultValues: [number, number, number, number] = [0.001, 0.001, 1, 0.01]
 ): [number, number, number, number] {
   const envmin = 0.001;
   const releaseMin = 0.01;
@@ -170,11 +177,11 @@ function getADSRValues(
   
   // If no params set, return defaults
   if (attack == null && decay == null && sustain == null && release == null) {
-    return [envmin, envmin, envmax, releaseMin];
+    return defaultValues;
   }
   
   // Calculate sustain level based on which params are set
-  // (matching Strudel's behavior)
+  // (matching superdough's behavior)
   let sustainLevel: number;
   if (sustain != null) {
     sustainLevel = sustain;
@@ -496,12 +503,17 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       // Calculate ADSR values matching superdough's getADSRValues behavior
       // This ensures sustainLevel is set correctly based on which params are specified
       // IMPORTANT: Check rawValue.sustain BEFORE we overwrite controls.sustain with delta
+      // 
+      // Synth defaults from superdough/synth.mjs line 44-48:
+      //   [0.001, 0.05, 0.6, 0.01] = [attack, decay, sustain, release]
+      // This means synths have a quick attack, 50ms decay to 60% sustain level
       const patternSustainLevel = typeof rawValue.sustain === 'number' ? rawValue.sustain : undefined;
       const [envAttack, envDecay, envSustainLevel, envRelease] = getADSRValues(
         controls.attack,
         controls.decay,
         patternSustainLevel,  // sustain LEVEL from pattern (0-1), not duration
-        controls.release
+        controls.release,
+        [0.001, 0.05, 0.6, 0.01]  // synth defaults from superdough
       );
       
       // Calculate hold time: duration - attack - decay (release extends past)
@@ -783,14 +795,16 @@ export function sendHapToSuperDirt(hap: any, targetTime: number, cps: number): v
     const now = Date.now() / 1000;
     const secondsFromNow = unixTargetTime - now;
     
+    // Build argsObj for routing and debug logging
+    const argsObj: Record<string, any> = {};
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i]?.value && args[i+1]) {
+        argsObj[args[i].value] = args[i+1].value;
+      }
+    }
+    
     if (oscDebug) {
       // Just dump key args
-      const argsObj: Record<string, any> = {};
-      for (let i = 0; i < args.length; i += 2) {
-        if (args[i]?.value && args[i+1]) {
-          argsObj[args[i].value] = args[i+1].value;
-        }
-      }
       const speedStr = argsObj.speed?.toFixed?.(4) || argsObj.speed;
       const noteStr = argsObj.note !== undefined ? ` note=${argsObj.note}` : '';
       const freqStr = argsObj.freq !== undefined ? ` freq=${argsObj.freq?.toFixed?.(1)}` : '';
@@ -816,10 +830,19 @@ export function sendHapToSuperDirt(hap: any, targetTime: number, cps: number): v
       const lpEnvStr = argsObj.strudelLpEnv !== undefined ? ` lpenv=${argsObj.strudelLpEnv} lpdecay=${argsObj.strudelLpDecay?.toFixed?.(2)}` : '';
       const hpEnvStr = argsObj.strudelHpEnv !== undefined ? ` hpenv=${argsObj.strudelHpEnv}` : '';
       console.log(`[osc] SEND: s=${argsObj.s} n=${argsObj.n}${orbitStr} speed=${speedStr}${freqStr}${sustainStr}${sustainLevelStr}${noteStr}${lpfStr}${lpEnvStr}${lpqStr}${hpfStr}${hpEnvStr}${hpqStr}${shapeStr}${zshapeStr}${zgainStr}${tremStr}${strudelEnvStr}${sfEnvStr}${instrStr} gain=${argsObj.gain?.toFixed?.(2)}${ampStr} t+${secondsFromNow.toFixed(3)}s`);
+      
+      // Debug: print all OSC args to verify strudelEnv* params are sent
+      if (argsObj.strudelEnvSustainLevel !== undefined) {
+        console.log(`[osc] Full OSC args for synth:`);
+        for (let i = 0; i < args.length; i += 2) {
+          console.log(`  ${args[i].value}=${args[i+1].value}`);
+        }
+      }
     }
     
     // Send as OSC bundle with timetag for precise scheduling
     // SuperDirt will schedule the sound to play at the specified time
+    // ALL sounds (synths and samples) go through /dirt/play to use our strudel_adsr module
     const bundle = {
       timeTag: osc.timeTag(secondsFromNow),
       packets: [{
