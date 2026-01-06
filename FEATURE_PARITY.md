@@ -2,7 +2,7 @@
 
 This document tracks feature parity between the WebAudio backend (superdough) and our SuperDirt/OSC backend.
 
-**Last Updated:** 2026-01-05
+**Last Updated:** 2026-01-06
 
 ## Similarity Score Legend
 
@@ -84,7 +84,7 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Shape (distortion) | `s("bd").shape(0.5)` | 0.92 | 93.2% | Good |
 | Crush (bitcrush) | `s("bd").crush(4)` | 0.99 | 97.5% | Excellent |
 | Coarse | `s("bd").coarse(8)` | 0.94 | 88.9% | Good |
-| Delay | `s("bd").delay(0.5)` | 0.00 | 11.6% | **Broken** - timing issue |
+| Delay | `s("bd").delay(0.5)` | 0.98 | 91.4% | Good |
 | Reverb | `s("bd").room(0.5)` | - | - | Untested |
 | Phaser | `s("saw").phaserrate(2)` | - | - | Untested |
 
@@ -140,13 +140,10 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 
 ## Known Issues
 
-### Critical
-1. **Delay broken** - Timing/scheduling issue with delay effect (11.6% similarity)
-
 ### Major
-2. **HPF on noise differs** - Different filter characteristics on white noise (46.7%)
-3. **Filter Q scaling** - High resonance values produce different results (65.1%)
-4. **BPF gain mismatch** - Bandpass filter has ~20dB gain difference (64.6%)
+1. **HPF on noise differs** - Different filter characteristics on white noise (46.7%)
+2. **Filter Q scaling** - High resonance values produce different results (65.1%)
+3. **BPF gain mismatch** - Bandpass filter has ~20dB gain difference (64.6%)
 
 ### Minor
 6. **Supersaw detuning** - Slightly different detuning algorithm
@@ -171,6 +168,11 @@ cd server && node compare-backends.mjs --all
 ---
 
 ## Changelog
+
+### 2026-01-06
+- Fixed delay effect for capture mode (11.6% → 91.4%)
+  - createFeedbackDelay now added to nodeWebAudio.AudioContext.prototype before context creation
+  - Exposed DelayNode globally for superdough's feedbackdelay.mjs detection
 
 ### 2026-01-05
 - Fixed pitched sample banks (`s("piano").note("c4")`) - now 94.0% similarity
