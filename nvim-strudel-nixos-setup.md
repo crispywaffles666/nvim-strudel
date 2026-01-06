@@ -202,10 +202,9 @@ For better audio quality and lower CPU usage:
    ```nix
    environment.systemPackages = with pkgs; [
      supercollider
+     pluginsSupercollider.sc3-plugins
    ];
    ```
-
-   Note: sc3-plugins is not available in nixpkgs. SuperCollider will work with its built-in plugins. For additional plugins, see the section below.
 
 2. Install SuperDirt (SuperCollider will auto-install this when needed, or manually):
    ```bash
@@ -228,70 +227,6 @@ For better audio quality and lower CPU usage:
      -- rest of config...
    })
    ```
-
-## Installing SuperCollider Plugins (sc3-plugins)
-
-sc3-plugins provides additional UGens (unit generators) for SuperCollider. Here's how to install them on NixOS:
-
-### Method 1: Build from Source (Recommended)
-
-```bash
-# Enter a nix-shell with build dependencies
-nix-shell -p git cmake gcc supercollider fftw libsndfile pkg-config
-
-# Clone sc3-plugins repository
-cd ~/Documents  # or wherever you want to build
-git clone --recursive https://github.com/supercollider/sc3-plugins.git
-cd sc3-plugins
-
-# Create build directory
-mkdir build && cd build
-
-# Configure with cmake (pointing to SuperCollider installation)
-cmake -DCMAKE_BUILD_TYPE=Release \
-      -DSC_PATH=/nix/store/$(ls /nix/store | grep supercollider | head -1) \
-      -DCMAKE_INSTALL_PREFIX=$HOME/.local/share/SuperCollider/Extensions \
-      ..
-
-# Build (this may take a while)
-make -j$(nproc)
-
-# Install
-make install
-```
-
-### Method 2: Download Pre-built Binaries
-
-```bash
-# Download the latest release from GitHub
-cd ~/Downloads
-wget https://github.com/supercollider/sc3-plugins/releases/download/Version-3.13.0/sc3-plugins-3.13.0-Linux-x86_64.tar.gz
-
-# Extract to SuperCollider extensions directory
-mkdir -p ~/.local/share/SuperCollider/Extensions
-tar -xzf sc3-plugins-3.13.0-Linux-x86_64.tar.gz -C ~/.local/share/SuperCollider/Extensions
-```
-
-### Verify Installation
-
-Start SuperCollider and run:
-```supercollider
-// Check if sc3-plugins are loaded
-ServerTree.tree;
-
-// Test a sc3-plugin UGen (should not error)
-{ PitchShift.ar(SinOsc.ar(440), 0.1, 2) }.play;
-```
-
-If it plays without errors, sc3-plugins are installed correctly!
-
-### Common sc3-plugins UGens
-
-- **PitchShift**: Real-time pitch shifting
-- **GVerb**: Reverb
-- **Greyhole**: Reverb effect
-- **JPverb**: Algorithmic reverb
-- **MembraneCircle**, **MembraneHexagon**: Physical modeling
 
 ## Why NixOS Needs Special Setup
 

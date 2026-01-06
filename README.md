@@ -48,7 +48,7 @@ sudo apt install supercollider sc3-plugins
 brew install supercollider
 ```
 
-**Nixos:**
+**NixOS:**
 Requires Special Setup [View](nvim-strudel-nixos-setup.md)
 
 
