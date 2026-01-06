@@ -39,13 +39,13 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 
 ### Noise Generators
 
-| Feature | Pattern | RMS Diff | Status |
-|---------|---------|----------|--------|
-| White noise | `s("white")` | +0.3dB | Excellent |
-| Pink noise | `s("pink")` | +0.8dB | Good |
-| Brown noise | `s("brown")` | +0.3dB | Excellent |
+| Feature | Pattern | Slope WA | Slope SC | Slope Diff | Status |
+|---------|---------|----------|----------|------------|--------|
+| White noise | `s("white")` | -0.21 dB/oct | +0.02 dB/oct | 0.23 | Excellent |
+| Pink noise | `s("pink")` | -3.22 dB/oct | -2.99 dB/oct | 0.24 | Excellent |
+| Brown noise | `s("brown")` | -5.54 dB/oct | -5.45 dB/oct | 0.08 | Excellent |
 
-*Note: Noise similarity/spectral scores are not meaningful because noise is random - each render produces different samples. RMS level matching is what matters, and all are within 1dB.*
+*Note: Noise is measured by spectral slope (dB/octave) rather than sample correlation. Expected slopes: white=0, pink=-3, brown=-6. All implementations match within 0.25 dB/octave. RMS levels also match within 1dB.*
 
 ### Filters
 
