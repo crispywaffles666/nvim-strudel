@@ -97,6 +97,19 @@ class TimingStats:
 
 
 @dataclass
+class NoiseStats:
+    """Statistics for noise signal analysis"""
+
+    mean: float  # Should be ~0
+    std_dev: float  # Standard deviation
+    skewness: float  # Should be ~0 for symmetric
+    kurtosis: float  # Should be ~3 for Gaussian (excess kurtosis ~0)
+    crest_factor_db: float  # Peak / RMS in dB
+    spectral_slope_db_oct: float  # dB per octave (0=white, -3=pink, -6=brown)
+    noise_type: str  # Detected type: "white", "pink", "brown", or "unknown"
+
+
+@dataclass
 class ComparisonResult:
     """Complete comparison results"""
 
@@ -380,6 +393,101 @@ def calculate_spectral_stats(data: np.ndarray, sample_rate: int) -> SpectralStat
         rolloff_hz=float(rolloff),
         flatness=float(flatness),
         dominant_freqs=dominant_freqs,
+    )
+
+
+def calculate_noise_stats(data: np.ndarray, sample_rate: int) -> NoiseStats:
+    """
+    Calculate statistics specifically for noise signals.
+
+    Measures:
+    - Distribution: mean, std, skewness, kurtosis
+    - Crest factor: peak/RMS ratio
+    - Spectral slope: dB/octave to classify noise type
+      - White: ~0 dB/oct (flat)
+      - Pink: ~-3 dB/oct (1/f)
+      - Brown: ~-6 dB/oct (1/f²)
+    """
+    from scipy.stats import skew, kurtosis as scipy_kurtosis
+
+    # Distribution statistics
+    mean = float(np.mean(data))
+    std_dev = float(np.std(data))
+    skewness = float(skew(data))
+    kurt = float(
+        scipy_kurtosis(data, fisher=False)
+    )  # Fisher=False gives Pearson's (normal=3)
+
+    # Crest factor
+    peak = np.max(np.abs(data))
+    rms = np.sqrt(np.mean(data**2))
+    if rms > 1e-10:
+        crest_factor_db = 20 * np.log10(peak / rms)
+    else:
+        crest_factor_db = 0.0
+
+    # Spectral slope via octave-band analysis
+    # Use FFT to get power spectrum
+    segment_len = min(len(data), sample_rate * 2)
+    start = (len(data) - segment_len) // 2
+    segment = data[start : start + segment_len]
+
+    window = np.hanning(len(segment))
+    windowed = segment * window
+
+    spectrum = np.abs(rfft(windowed))
+    freqs = rfftfreq(len(windowed), 1 / sample_rate)
+
+    # Power spectrum (skip DC)
+    power = spectrum[1:] ** 2
+    freqs = freqs[1:]
+
+    # Calculate power in octave bands from 100Hz to 10kHz
+    octave_centers = [125, 250, 500, 1000, 2000, 4000, 8000]
+    octave_powers = []
+
+    for fc in octave_centers:
+        # Octave band: fc/sqrt(2) to fc*sqrt(2)
+        f_low = fc / np.sqrt(2)
+        f_high = fc * np.sqrt(2)
+
+        # Find indices in this band
+        mask = (freqs >= f_low) & (freqs < f_high)
+        if np.any(mask):
+            band_power = np.mean(power[mask])
+            if band_power > 1e-20:
+                octave_powers.append((np.log2(fc), 10 * np.log10(band_power)))
+
+    # Linear regression to find slope (dB per octave)
+    if len(octave_powers) >= 3:
+        octaves = np.array([p[0] for p in octave_powers])
+        powers_db = np.array([p[1] for p in octave_powers])
+
+        # Least squares fit: power_db = slope * octave + intercept
+        A = np.vstack([octaves, np.ones(len(octaves))]).T
+        slope, _ = np.linalg.lstsq(A, powers_db, rcond=None)[0]
+        spectral_slope = float(slope)
+    else:
+        spectral_slope = 0.0
+
+    # Classify noise type based on slope
+    if abs(spectral_slope) < 1.5:
+        noise_type = "white"
+    elif -4.5 < spectral_slope < -1.5:
+        noise_type = "pink"
+    elif spectral_slope <= -4.5:
+        noise_type = "brown"
+    else:
+        noise_type = "unknown"
+
+    return NoiseStats(
+        mean=mean,
+        std_dev=std_dev,
+        skewness=skewness,
+        kurtosis=kurt,
+        crest_factor_db=crest_factor_db,
+        spectral_slope_db_oct=spectral_slope,
+        noise_type=noise_type,
     )
 
 
@@ -1201,6 +1309,11 @@ Examples:
     )
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
     parser.add_argument(
+        "--noise",
+        action="store_true",
+        help="Analyze as noise (spectral slope, distribution)",
+    )
+    parser.add_argument(
         "--threshold",
         type=float,
         default=-60,
@@ -1224,6 +1337,50 @@ Examples:
         normalize=args.normalize,
         silence_threshold_db=args.threshold,
     )
+
+    # Noise analysis if requested
+    if args.noise:
+        data1, sr1 = load_audio(args.file1)
+        data2, sr2 = load_audio(args.file2)
+        noise1 = calculate_noise_stats(data1, sr1)
+        noise2 = calculate_noise_stats(data2, sr2)
+
+        print("\n" + "=" * 60)
+        print("NOISE ANALYSIS")
+        print("=" * 60)
+        print(f"{'Property':<25} {'File 1':>15} {'File 2':>15} {'Diff':>10}")
+        print("-" * 65)
+        print(f"{'Noise Type':<25} {noise1.noise_type:>15} {noise2.noise_type:>15}")
+        print(
+            f"{'Spectral Slope (dB/oct)':<25} {noise1.spectral_slope_db_oct:>15.2f} {noise2.spectral_slope_db_oct:>15.2f} {noise1.spectral_slope_db_oct - noise2.spectral_slope_db_oct:>+10.2f}"
+        )
+        print(
+            f"{'Crest Factor (dB)':<25} {noise1.crest_factor_db:>15.2f} {noise2.crest_factor_db:>15.2f} {noise1.crest_factor_db - noise2.crest_factor_db:>+10.2f}"
+        )
+        print(f"{'Mean':<25} {noise1.mean:>15.6f} {noise2.mean:>15.6f}")
+        print(
+            f"{'Std Dev':<25} {noise1.std_dev:>15.4f} {noise2.std_dev:>15.4f} {noise1.std_dev - noise2.std_dev:>+10.4f}"
+        )
+        print(f"{'Skewness':<25} {noise1.skewness:>15.4f} {noise2.skewness:>15.4f}")
+        print(f"{'Kurtosis':<25} {noise1.kurtosis:>15.4f} {noise2.kurtosis:>15.4f}")
+        print()
+
+        # Noise-specific similarity based on spectral slope match
+        slope_diff = abs(noise1.spectral_slope_db_oct - noise2.spectral_slope_db_oct)
+        if slope_diff < 0.5:
+            slope_match = "Excellent"
+        elif slope_diff < 1.0:
+            slope_match = "Good"
+        elif slope_diff < 2.0:
+            slope_match = "Fair"
+        else:
+            slope_match = "Poor"
+
+        print(f"Spectral Slope Match: {slope_match} (diff: {slope_diff:.2f} dB/oct)")
+        if noise1.noise_type == noise2.noise_type:
+            print(f"Noise Type Match: Yes ({noise1.noise_type})")
+        else:
+            print(f"Noise Type Match: No ({noise1.noise_type} vs {noise2.noise_type})")
 
     # Output results
     if args.json:
