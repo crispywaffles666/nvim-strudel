@@ -22,28 +22,28 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 
 | Feature | Pattern | Spectral | Similarity | Status |
 |---------|---------|----------|------------|--------|
-| Sample playback | `s("bd sd hh sd")` | 0.93 | 88.3% | Good |
-| Sample speed | `s("bd").speed(2)` | 0.82 | 92.2% | Good |
-| Sample note | `s("piano").note("c4")` | 0.00 | 8.4% | **Broken** - needs investigation |
+| Sample playback | `s("bd sd hh sd")` | 0.96 | 92.1% | Good |
+| Sample speed | `s("bd").speed(2)` | 0.89 | 93.2% | Good |
+| Sample note | `s("piano").note("c4")` | 1.00 | 94.0% | Good |
 
 ### Synthesizers
 
 | Feature | Pattern | Spectral | Similarity | Status |
 |---------|---------|----------|------------|--------|
-| Sine | `note("c4").s("sine")` | 1.00 | 97.4% | Excellent |
-| Saw | `note("c4").s("saw")` | 1.00 | 93.7% | Good |
-| Square | `note("c4").s("square")` | 0.99 | 92.6% | Good |
-| Triangle | `note("c4").s("triangle")` | 1.00 | 96.7% | Excellent |
-| Pulse | `note("c4").s("pulse")` | 0.83 | 86.6% | Good |
-| Supersaw | `note("c3").s("supersaw")` | 0.76 | 69.2% | Fair - detuning differs |
+| Sine | `note("c4").s("sine")` | 1.00 | 97.2% | Excellent |
+| Saw | `note("c4").s("saw")` | 1.00 | 94.0% | Good |
+| Square | `note("c4").s("square")` | 0.99 | 92.4% | Good |
+| Triangle | `note("c4").s("triangle")` | 1.00 | 96.4% | Excellent |
+| Pulse | `note("c4").s("pulse")` | 0.83 | 88.2% | Good |
+| Supersaw | `note("c3").s("supersaw")` | 0.84 | 81.2% | Fair - detuning differs |
 
 ### Noise Generators
 
 | Feature | Pattern | Spectral | Similarity | Status |
 |---------|---------|----------|------------|--------|
-| White noise | `s("white")` | 0.00 | 35.6% | Expected - random |
-| Pink noise | `s("pink")` | 0.63 | 72.4% | Fair - algorithm differs |
-| Brown noise | `s("brown")` | 0.76 | 72.4% | Fair - algorithm differs |
+| White noise | `s("white")` | 0.00 | 55.4% | Expected - random |
+| Pink noise | `s("pink")` | 0.66 | 75.8% | Fair - algorithm differs |
+| Brown noise | `s("brown")` | 0.76 | 71.9% | Fair - algorithm differs |
 
 *Note: Noise generators have low spectral correlation because they produce random output. RMS levels are close.*
 
@@ -53,7 +53,7 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 |---------|---------|----------|------------|--------|
 | LPF basic | `s("saw").lpf(500)` | 1.00 | 95.6% | Excellent |
 | LPF + resonance | `s("saw").lpf(500).lpq(10)` | 0.93 | 65.1% | Poor - Q scaling differs |
-| HPF basic | `s("white").hpf(2000)` | 0.45 | 45.7% | Poor - needs work |
+| HPF basic | `s("white").hpf(2000)` | 0.47 | 46.7% | Poor - needs work |
 | HPF + resonance | `s("white").hpf(1000).hpq(10)` | 0.52 | 64.6% | Poor - Q scaling differs |
 | LPF envelope | `s("bd").lpf(500).lpenv(2).lpdecay(0.5)` | 0.99 | 96.7% | Excellent |
 | LPF env negative | `s("saw").lpf(2000).lpenv(-2)` | 1.00 | 96.2% | Excellent |
@@ -141,13 +141,12 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 ## Known Issues
 
 ### Critical
-1. **Sample + note broken** - `s("piano").note("c4")` produces silence on SC
-2. **Delay broken** - Timing/scheduling issue with delay effect
+1. **Delay broken** - Timing/scheduling issue with delay effect (11.6% similarity)
 
 ### Major
-3. **HPF on noise differs** - Different filter characteristics on white noise
-4. **Filter Q scaling** - High resonance values produce different results
-5. **BPF gain mismatch** - Bandpass filter has ~20dB gain difference
+2. **HPF on noise differs** - Different filter characteristics on white noise (46.7%)
+3. **Filter Q scaling** - High resonance values produce different results (65.1%)
+4. **BPF gain mismatch** - Bandpass filter has ~20dB gain difference (64.6%)
 
 ### Minor
 6. **Supersaw detuning** - Slightly different detuning algorithm
@@ -174,6 +173,8 @@ cd server && node compare-backends.mjs --all
 ## Changelog
 
 ### 2026-01-05
+- Fixed pitched sample banks (`s("piano").note("c4")`) - now 94.0% similarity
+- Fixed render-pattern-sc.mjs to load Strudel samples cache
 - Added tremolo module with 5 waveform shapes (pow 1.5 curve)
 - Added filter envelope support (lpenv, hpenv with ADSR)
 - Fixed NaN issue with exponential envelope curves
