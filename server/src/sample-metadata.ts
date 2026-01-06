@@ -224,6 +224,17 @@ export function processValueForOsc(value: Record<string, any>): Record<string, a
     return value;
   }
   
+  // Check if pitch is explicitly specified
+  const hasPitch = value.freq !== undefined || 
+                   value.note !== undefined || 
+                   value.midinote !== undefined;
+  
+  // If no pitch specified, pass through - let user's explicit n be used
+  // This handles patterns like s("piano:5") where user wants sample 5 directly
+  if (!hasPitch) {
+    return value;
+  }
+  
   // Get the target note (same logic as superdough's valueToMidi with fallback 36)
   let targetMidi: number = 36; // Default C2, same as superdough
   
