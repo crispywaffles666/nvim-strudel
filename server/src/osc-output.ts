@@ -786,6 +786,14 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     delete controls.ftype;
   }
   
+  // DJF (DJ Filter) - crossfades between lowpass and highpass
+  // djf < 0.5 = lowpass, djf > 0.5 = highpass, djf = 0.5 = neutral
+  // We pass this directly to the filter module as strudelDjf
+  if (controls.djf !== undefined) {
+    controls.strudelDjf = controls.djf;
+    delete controls.djf;
+  }
+  
   // Convert gain to SuperDirt's gain curve (applies to all synth sounds)
   controls.gain = convertGainForSuperDirt(controls.gain);
 

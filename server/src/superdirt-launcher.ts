@@ -203,13 +203,33 @@ s.waitForBoot {
     // Line.kr with doneAction:2 frees the synth after sustain time
     // Filtering is handled by the strudel_filter module (not in individual synths)
     // Vibrato: vib = LFO rate in Hz, vibmod = depth in semitones (default 0.5)
-    SynthDef(\\strudel_sine, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
-      var sound, vibFreq;
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+    // Pitch envelope: penv = depth in semitones, pattack/pdecay/psustain/prelease = ADSR
+    //                 panchor = pivot point (0-1, default = psustain)
+    SynthDef(\\strudel_sine, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
+                               vib = 0, vibmod = 0.5,
+                               penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
+      
+      // Pitch envelope: modulates pitch in semitones with ADSR
+      // panchor = -1 means use psustain as anchor (superdough default)
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      // Map envelope (0-1) to semitones: min = -penv*anchor, max = penv*(1-anchor)
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
-      sound = SinOsc.ar(vibFreq);
+      
+      // Vibrato: sinusoidal pitch modulation
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      
+      // Combine: base freq * 2^((pitchEnv + vibrato) / 12)
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
+      
+      sound = SinOsc.ar(modFreq);
       // Free synth after sustain time (envelope applied by strudel_adsr module)
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
@@ -220,14 +240,25 @@ s.waitForBoot {
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
     // RMS compensation: SC's Saw.ar has lower RMS than Web Audio's normalized sawtooth
     // due to band-limiting. Factor of 2.0 matches RMS levels between the two backends.
-    // Vibrato: vib = LFO rate in Hz, vibmod = depth in semitones (default 0.5)
-    SynthDef(\\strudel_sawtooth, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
-      var sound, vibFreq;
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+    // Vibrato + Pitch envelope support
+    SynthDef(\\strudel_sawtooth, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
+                                   vib = 0, vibmod = 0.5,
+                                   penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
+      
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
-      sound = Saw.ar(vibFreq) * 2.0;  // RMS compensation for band-limited Saw
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
+      
+      sound = Saw.ar(modFreq) * 2.0;  // RMS compensation for band-limited Saw
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -235,13 +266,24 @@ s.waitForBoot {
     
     // Alias for sawtooth (superdough uses 'saw')
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_saw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
-      var sound, vibFreq;
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+    SynthDef(\\strudel_saw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
+                              vib = 0, vibmod = 0.5,
+                              penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
+      
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
-      sound = Saw.ar(vibFreq) * 2.0;  // RMS compensation for band-limited Saw
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
+      
+      sound = Saw.ar(modFreq) * 2.0;  // RMS compensation for band-limited Saw
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -250,13 +292,25 @@ s.waitForBoot {
     // Square wave oscillator
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
     // RMS compensation: SC's Pulse.ar has lower RMS than Web Audio's normalized square
-    SynthDef(\\strudel_square, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
-      var sound, vibFreq;
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+    // Vibrato + Pitch envelope support
+    SynthDef(\\strudel_square, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
+                                 vib = 0, vibmod = 0.5,
+                                 penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
+      
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
-      sound = Pulse.ar(vibFreq, 0.5) * 1.9;  // RMS compensation for band-limited Pulse
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
+      
+      sound = Pulse.ar(modFreq, 0.5) * 1.9;  // RMS compensation for band-limited Pulse
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -264,26 +318,50 @@ s.waitForBoot {
     
     // Triangle wave oscillator
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_triangle, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
-      var sound, vibFreq;
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+    // Vibrato + Pitch envelope support
+    SynthDef(\\strudel_triangle, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
+                                   vib = 0, vibmod = 0.5,
+                                   penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
+      
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
-      sound = LFTri.ar(vibFreq);
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
+      
+      sound = LFTri.ar(modFreq);
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
     "Added: strudel_triangle".postln;
+    
     // Alias for triangle (superdough uses 'tri')
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_tri, { |out, freq = 440, sustain = 1, pan = 0, speed = 1, vib = 0, vibmod = 0.5|
-      var sound, vibFreq;
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+    SynthDef(\\strudel_tri, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
+                              vib = 0, vibmod = 0.5,
+                              penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
+      
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
-      sound = LFTri.ar(vibFreq);
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
+      
+      sound = LFTri.ar(modFreq);
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
     }).add;
@@ -421,21 +499,35 @@ s.waitForBoot {
     // ========================================
     
     SynthDef(\\strudel_pulse, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                pw = 0.5, pwrate = 1, pwsweep = 0, vib = 0, vibmod = 0.5|
-      var sound, width, vibFreq;
+                                pw = 0.5, pwrate = 1, pwsweep = 0, vib = 0, vibmod = 0.5,
+                                penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, width, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
       
-      // Vibrato: pitch LFO
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      // Pitch envelope: modulates pitch in semitones with ADSR
+      // panchor = -1 means use psustain as anchor (superdough default)
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      // Map envelope (0-1) to semitones: min = -penv*anchor, max = penv*(1-anchor)
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
+      
+      // Vibrato: sinusoidal pitch modulation
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      
+      // Combine: base freq * 2^((pitchEnv + vibrato) / 12)
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
       
       // Pulse width modulation: pw oscillates around the base pw value
       width = pw + (SinOsc.kr(pwrate) * pwsweep);
       width = width.clip(0.01, 0.99);  // Prevent aliasing at extremes
       
       // Gain of 0.7 tuned to match browser superdough output level
-      sound = Pulse.ar(vibFreq, width) * 0.7;
+      sound = Pulse.ar(modFreq, width) * 0.7;
       
       Line.kr(0, 0, sustain, doneAction: 2);
       Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
@@ -450,14 +542,28 @@ s.waitForBoot {
     // ========================================
     
     SynthDef(\\strudel_supersaw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   unison = 5, spread = 0.6, detune = 0.18, vib = 0, vibmod = 0.5|
-      var sound, voices, freqs, pans, gainAdjust, vibFreq;
+                                   unison = 5, spread = 0.6, detune = 0.18, vib = 0, vibmod = 0.5,
+                                   penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1|
+      var sound, voices, freqs, pans, gainAdjust, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
       
-      // Vibrato: pitch LFO applied to base frequency
-      vibFreq = Select.kr(vib > 0, [
-        freq * speed,
-        freq * speed * (2 ** (vibmod * SinOsc.kr(vib) / 12))
+      // Pitch envelope: modulates pitch in semitones with ADSR
+      // panchor = -1 means use psustain as anchor (superdough default)
+      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
+      pitchEnv = EnvGen.kr(
+        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      // Map envelope (0-1) to semitones: min = -penv*anchor, max = penv*(1-anchor)
+      pitchEnvMod = Select.kr(penv.abs > 0.001, [
+        0,
+        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
       ]);
+      
+      // Vibrato: sinusoidal pitch modulation
+      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
+      
+      // Combine: base freq * 2^((pitchEnv + vibrato) / 12)
+      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
       
       // Clamp unison to reasonable range (1-16 for performance)
       voices = unison.clip(1, 16);
@@ -466,7 +572,7 @@ s.waitForBoot {
       // Spread them evenly from -detune to +detune semitones
       freqs = Array.fill(16, { |i|
         var detuneAmount = (i - (voices - 1) / 2) / (voices.max(2) - 1) * 2;
-        vibFreq * (2 ** (detuneAmount * detune / 12))
+        modFreq * (2 ** (detuneAmount * detune / 12))
       });
       
       // Pan spread: voices spread from -spread to +spread
@@ -619,13 +725,45 @@ s.waitForBoot {
                                                  strudelBpAttack = 0.005, strudelBpDecay = 0.14,
                                                  strudelBpSustain = 0, strudelBpRelease = 0.1,
                                                  strudelFanchor = 0,
-                                                 strudelFtype = 0|
+                                                 strudelFtype = 0,
+                                                 strudelDjf = -1|
       var signal, rqLpf, rqHpf, rqBpf, lpfFreq, hpfFreq, bpfFreq;
       var lpfEnvFreq, hpfEnvFreq, bpfEnvFreq, lpfEnv, hpfEnv, bpfEnv;
       var lpfEnvAbs, hpfEnvAbs, bpfEnvAbs, lpfOffset, hpfOffset, bpfOffset;
       var lpfMin, lpfMax, hpfMin, hpfMax, bpfMin, bpfMax;
+      var djfV, djfCutoff, djfSignal;
       
       signal = In.ar(out, ${channels});
+      
+      // DJF (DJ Filter) - crossfade between LPF and HPF
+      // djf < 0.49 = lowpass, djf > 0.51 = highpass, 0.49-0.51 = neutral
+      // Cutoff formula from superdough: (v * 11)^4
+      // strudelDjf = -1 means disabled (default), 0-1 means active
+      signal = Select.ar(strudelDjf >= 0, [
+        signal,  // DJF disabled - pass through unchanged
+        {
+          // Calculate v and cutoff based on djf value
+          // For lowpass (djf < 0.49): v = djf * 2
+          // For highpass (djf > 0.51): v = (djf - 0.5) * 2
+          var isLowpass = strudelDjf < 0.49;
+          var isHighpass = strudelDjf > 0.51;
+          var isNeutral = (strudelDjf >= 0.49) * (strudelDjf <= 0.51);
+          var lpV = (strudelDjf * 2).clip(0, 1);
+          var hpV = ((strudelDjf - 0.5) * 2).clip(0, 1);
+          var lpCut = ((lpV * 11) ** 4).clip(20, 20000);
+          var hpCut = ((hpV * 11) ** 4).clip(20, 20000);
+          
+          // Apply LPF, HPF, or pass through based on djf value
+          // Using simple RLPF/RHPF with fixed moderate Q
+          var filteredLp = RLPF.ar(signal, lpCut, 0.7);
+          var filteredHp = RHPF.ar(signal, hpCut, 0.7);
+          
+          Select.ar(isLowpass, [
+            Select.ar(isHighpass, [signal, filteredHp]),
+            filteredLp
+          ])
+        }.value
+      ]);
       
       // Convert Q to rq for SuperCollider's RLPF/RHPF/BPF
       // WebAudio BiquadFilter uses Q directly, SC uses rq = 1/Q
@@ -722,11 +860,11 @@ s.waitForBoot {
       ]);
       
       ReplaceOut.ar(out, signal);
-    }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
-    "Added: strudel_filter${channels} (with envelope support, BPF, and 24dB mode)".postln;
+    }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr]).add;
+    "Added: strudel_filter${channels} (with envelope support, BPF, 24dB mode, and DJF)".postln;
     
     // Register the strudel_filter module with SuperDirt
-    // This module triggers when strudelLpf, strudelHpf, or strudelBpf parameters are present
+    // This module triggers when strudelLpf, strudelHpf, strudelBpf, or strudelDjf parameters are present
     // and applies our filters INSTEAD of SuperDirt's dirt_lpf/dirt_hpf/dirt_bpf modules
     ~dirt.addModule('strudel_filter',
       { |dirtEvent|
@@ -756,10 +894,11 @@ s.waitForBoot {
             strudelBpRelease: ~strudelBpRelease ? 0.1,
             strudelFanchor: ~strudelFanchor ? 0,
             strudelFtype: ~strudelFtype ? 0,
+            strudelDjf: ~strudelDjf ? -1,
             out: ~out
           ])
-      }, { ~strudelLpf.notNil || ~strudelHpf.notNil || ~strudelBpf.notNil });
-    "*** Strudel filter module registered (with envelope support, BPF, and 24dB mode) ***".postln;
+      }, { ~strudelLpf.notNil || ~strudelHpf.notNil || ~strudelBpf.notNil || ~strudelDjf.notNil });
+    "*** Strudel filter module registered (with envelope support, BPF, 24dB mode, and DJF) ***".postln;
     
     // ========================================
     // Strudel Tremolo Module (for SAMPLES and SYNTHS)
