@@ -279,25 +279,50 @@ function hapToOscArgs(hap: any, cps: number): any[] {
   
   // Handle tremolo parameter mapping
   // Strudel uses: tremolo (Hz) or tremolosync (cycles), tremolodepth, tremoloskew, tremolophase, tremoloshape
-  // SuperDirt uses: tremolorate (Hz), tremolodepth
+  // We use custom strudel* params to use our strudel_tremolo module instead of SuperDirt's dirt_tremolo
+  // Our module supports: strudelTremRate, strudelTremDepth, strudelTremSkew, strudelTremPhase, strudelTremShape
   if (controls.tremolosync != null) {
     // tremolosync is in cycles, convert to Hz using cps
-    controls.tremolorate = controls.tremolosync * cps;
+    controls.strudelTremRate = controls.tremolosync * cps;
     delete controls.tremolosync;
   } else if (controls.tremolo != null) {
     // tremolo is already in Hz
-    controls.tremolorate = controls.tremolo;
+    controls.strudelTremRate = controls.tremolo;
     delete controls.tremolo;
   }
   
   // If tremolo is active but tremolodepth not specified, default to 1 (matching superdough)
-  // SuperDirt defaults to 0.5, but superdough defaults to 1
-  if (controls.tremolorate != null && controls.tremolodepth == null) {
-    controls.tremolodepth = 1;
+  if (controls.strudelTremRate != null && controls.tremolodepth == null) {
+    controls.strudelTremDepth = 1;
+  } else if (controls.tremolodepth != null) {
+    controls.strudelTremDepth = controls.tremolodepth;
+    delete controls.tremolodepth;
   }
   
-  // Note: tremoloskew, tremolophase, tremoloshape are Strudel-specific and not supported by SuperDirt
-  // They will be passed through but ignored
+  // Pass through tremolo shape parameters to our custom module
+  if (controls.tremoloskew != null) {
+    controls.strudelTremSkew = controls.tremoloskew;
+    delete controls.tremoloskew;
+  } else if (controls.strudelTremRate != null) {
+    // superdough default: skew = tremoloshape != null ? 0.5 : 1
+    // When no shape specified, skew defaults to 1 (pure ramp-down)
+    // When shape is specified, skew defaults to 0.5 (symmetric)
+    controls.strudelTremSkew = (controls.tremoloshape != null) ? 0.5 : 1.0;
+  }
+  if (controls.tremolophase != null) {
+    controls.strudelTremPhase = controls.tremolophase;
+    delete controls.tremolophase;
+  }
+  if (controls.tremoloshape != null) {
+    // superdough shape: 0=tri, 1=sine, 2=ramp, 3=saw, 4=square
+    controls.strudelTremShape = controls.tremoloshape;
+    delete controls.tremoloshape;
+  }
+  
+  // Delete any remaining tremolorate that might conflict with SuperDirt's module
+  if (controls.tremolorate != null) {
+    delete controls.tremolorate;
+  }
   
   // Handle phaser parameter mapping
   // Strudel uses: phaserrate, phaserdepth
@@ -644,6 +669,58 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     delete controls.hpq;
   }
   
+  // Handle filter envelope parameters for lowpass filter
+  // superdough uses: lpenv (amount in octaves), lpattack, lpdecay, lpsustain, lprelease, fanchor
+  if (controls.lpenv !== undefined) {
+    controls.strudelLpEnv = controls.lpenv;
+    delete controls.lpenv;
+  }
+  if (controls.lpattack !== undefined) {
+    controls.strudelLpAttack = controls.lpattack;
+    delete controls.lpattack;
+  }
+  if (controls.lpdecay !== undefined) {
+    controls.strudelLpDecay = controls.lpdecay;
+    delete controls.lpdecay;
+  }
+  if (controls.lpsustain !== undefined) {
+    controls.strudelLpSustain = controls.lpsustain;
+    delete controls.lpsustain;
+  }
+  if (controls.lprelease !== undefined) {
+    controls.strudelLpRelease = controls.lprelease;
+    delete controls.lprelease;
+  }
+  
+  // Handle filter envelope parameters for highpass filter
+  // superdough uses: hpenv (amount in octaves), hpattack, hpdecay, hpsustain, hprelease
+  if (controls.hpenv !== undefined) {
+    controls.strudelHpEnv = controls.hpenv;
+    delete controls.hpenv;
+  }
+  if (controls.hpattack !== undefined) {
+    controls.strudelHpAttack = controls.hpattack;
+    delete controls.hpattack;
+  }
+  if (controls.hpdecay !== undefined) {
+    controls.strudelHpDecay = controls.hpdecay;
+    delete controls.hpdecay;
+  }
+  if (controls.hpsustain !== undefined) {
+    controls.strudelHpSustain = controls.hpsustain;
+    delete controls.hpsustain;
+  }
+  if (controls.hprelease !== undefined) {
+    controls.strudelHpRelease = controls.hprelease;
+    delete controls.hprelease;
+  }
+  
+  // Filter anchor point (0-1, where envelope pivots around cutoff frequency)
+  if (controls.fanchor !== undefined) {
+    controls.strudelFanchor = controls.fanchor;
+    delete controls.fanchor;
+  }
+  
   // Convert gain to SuperDirt's gain curve (applies to all synth sounds)
   controls.gain = convertGainForSuperDirt(controls.gain);
 
@@ -735,7 +812,10 @@ export function sendHapToSuperDirt(hap: any, targetTime: number, cps: number): v
       const zgainStr = argsObj.zgain !== undefined ? ` zgain=${argsObj.zgain?.toFixed?.(2)}` : '';
       const sustainLevelStr = argsObj.sustainLevel !== undefined ? ` sustainLevel=${argsObj.sustainLevel?.toFixed?.(2)}` : '';
       const ampStr = argsObj.amp !== undefined ? ` amp=${argsObj.amp?.toFixed?.(2)}` : '';
-      console.log(`[osc] SEND: s=${argsObj.s} n=${argsObj.n}${orbitStr} speed=${speedStr}${freqStr}${sustainStr}${sustainLevelStr}${noteStr}${lpfStr}${lpqStr}${hpfStr}${hpqStr}${shapeStr}${zshapeStr}${zgainStr}${tremStr}${strudelEnvStr}${sfEnvStr}${instrStr} gain=${argsObj.gain?.toFixed?.(2)}${ampStr} t+${secondsFromNow.toFixed(3)}s`);
+      // Show filter envelope params if present
+      const lpEnvStr = argsObj.strudelLpEnv !== undefined ? ` lpenv=${argsObj.strudelLpEnv} lpdecay=${argsObj.strudelLpDecay?.toFixed?.(2)}` : '';
+      const hpEnvStr = argsObj.strudelHpEnv !== undefined ? ` hpenv=${argsObj.strudelHpEnv}` : '';
+      console.log(`[osc] SEND: s=${argsObj.s} n=${argsObj.n}${orbitStr} speed=${speedStr}${freqStr}${sustainStr}${sustainLevelStr}${noteStr}${lpfStr}${lpEnvStr}${lpqStr}${hpfStr}${hpEnvStr}${hpqStr}${shapeStr}${zshapeStr}${zgainStr}${tremStr}${strudelEnvStr}${sfEnvStr}${instrStr} gain=${argsObj.gain?.toFixed?.(2)}${ampStr} t+${secondsFromNow.toFixed(3)}s`);
     }
     
     // Send as OSC bundle with timetag for precise scheduling

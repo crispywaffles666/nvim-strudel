@@ -730,12 +730,29 @@ s.waitForBoot {
     // 
     // The filter uses 12dB/octave resonant filters (RLPF/RHPF) to match superdough.
     // At extreme values (LPF at 20kHz, HPF at 20Hz), filters are essentially transparent.
+    //
+    // Filter envelope support:
+    // - strudelLpEnv/strudelHpEnv: envelope amount in octaves (can be negative)
+    // - strudelLpAttack/strudelHpAttack: attack time
+    // - strudelLpDecay/strudelHpDecay: decay time  
+    // - strudelLpSustain/strudelHpSustain: sustain level (0-1)
+    // - strudelLpRelease/strudelHpRelease: release time
+    // - strudelFanchor: anchor point (0=env sweeps up from cutoff, 1=sweeps down, 0.5=centered)
     // ========================================
     
-    SynthDef("strudel_filter" ++ ${channels}, { |out, 
+    SynthDef("strudel_filter" ++ ${channels}, { |out, sustain = 1,
                                                  strudelLpf = 20000, strudelHpf = 20,
-                                                 strudelLpq = 1, strudelHpq = 1|
+                                                 strudelLpq = 1, strudelHpq = 1,
+                                                 strudelLpEnv = 0, strudelHpEnv = 0,
+                                                 strudelLpAttack = 0.005, strudelLpDecay = 0.14,
+                                                 strudelLpSustain = 0, strudelLpRelease = 0.1,
+                                                 strudelHpAttack = 0.005, strudelHpDecay = 0.14,
+                                                 strudelHpSustain = 0, strudelHpRelease = 0.1,
+                                                 strudelFanchor = 0|
       var signal, rqLpf, rqHpf, lpfFreq, hpfFreq;
+      var lpfEnvFreq, hpfEnvFreq, lpfEnv, hpfEnv;
+      var lpfEnvAbs, hpfEnvAbs, lpfOffset, hpfOffset, lpfMin, lpfMax, hpfMin, hpfMax;
+      
       signal = In.ar(out, ${channels});
       
       // Convert Q to rq (reciprocal of Q)
@@ -743,18 +760,56 @@ s.waitForBoot {
       rqLpf = (1/strudelLpq.max(0.001)).clip(0.01, 2);
       rqHpf = (1/strudelHpq.max(0.001)).clip(0.01, 2);
       
-      // Clip frequencies to valid range
+      // Base frequencies
       lpfFreq = strudelLpf.clip(20, 20000);
       hpfFreq = strudelHpf.clip(20, 20000);
       
-      // Apply both filters unconditionally - they become transparent at extreme values
-      // Using Select.ar with boolean conditions caused issues; this approach is simpler
-      signal = RLPF.ar(signal, lpfFreq, rqLpf);
-      signal = RHPF.ar(signal, hpfFreq, rqHpf);
+      // Apply filter envelopes if env amount is non-zero
+      // superdough uses octave-based envelope: freq * 2^(env * envelope_value)
+      // fanchor determines the pivot point: 0 = sweep up from cutoff, 1 = sweep down, 0.5 = centered
+      
+      // LPF envelope
+      lpfEnvAbs = strudelLpEnv.abs;
+      lpfOffset = lpfEnvAbs * strudelFanchor;
+      lpfMin = (lpfFreq * (2 ** lpfOffset.neg)).clip(20, 20000);
+      lpfMax = (lpfFreq * (2 ** (lpfEnvAbs - lpfOffset))).clip(20, 20000);
+      // If env is negative, swap min and max
+      // NOTE: Using numeric curve -4 instead of \exp because SC's \exp symbol curve
+      // doesn't work with envelopes that start at or pass through 0 (produces NaN).
+      // -4 gives a similar exponential-like decay without the NaN issue.
+      lpfEnv = EnvGen.kr(
+        Env.adsr(strudelLpAttack, strudelLpDecay, strudelLpSustain, strudelLpRelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      lpfEnvFreq = Select.kr(strudelLpEnv < 0, [
+        lpfEnv.linexp(0, 1, lpfMin.max(20), lpfMax.max(20)),
+        lpfEnv.linexp(0, 1, lpfMax.max(20), lpfMin.max(20))
+      ]);
+      // If no envelope, just use base frequency
+      lpfEnvFreq = Select.kr(strudelLpEnv.abs > 0.001, [lpfFreq, lpfEnvFreq]);
+      
+      // HPF envelope  
+      hpfEnvAbs = strudelHpEnv.abs;
+      hpfOffset = hpfEnvAbs * strudelFanchor;
+      hpfMin = (hpfFreq * (2 ** hpfOffset.neg)).clip(20, 20000);
+      hpfMax = (hpfFreq * (2 ** (hpfEnvAbs - hpfOffset))).clip(20, 20000);
+      hpfEnv = EnvGen.kr(
+        Env.adsr(strudelHpAttack, strudelHpDecay, strudelHpSustain, strudelHpRelease, curve: -4),
+        gate: 1, doneAction: 0
+      );
+      hpfEnvFreq = Select.kr(strudelHpEnv < 0, [
+        hpfEnv.linexp(0, 1, hpfMin.max(20), hpfMax.max(20)),
+        hpfEnv.linexp(0, 1, hpfMax.max(20), hpfMin.max(20))
+      ]);
+      hpfEnvFreq = Select.kr(strudelHpEnv.abs > 0.001, [hpfFreq, hpfEnvFreq]);
+      
+      // Apply both filters
+      signal = RLPF.ar(signal, lpfEnvFreq, rqLpf);
+      signal = RHPF.ar(signal, hpfEnvFreq, rqHpf);
       
       ReplaceOut.ar(out, signal);
-    }, [\\ir, \\kr, \\kr, \\kr, \\kr]).add;
-    "Added: strudel_filter${channels}".postln;
+    }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    "Added: strudel_filter${channels} (with envelope support)".postln;
     
     // Register the strudel_filter module with SuperDirt
     // This module triggers when strudelLpf or strudelHpf parameters are present
@@ -763,16 +818,118 @@ s.waitForBoot {
       { |dirtEvent|
         dirtEvent.sendSynth('strudel_filter' ++ ${channels},
           [
+            sustain: ~sustain ? 1,
             strudelLpf: ~strudelLpf ? 20000,
             strudelHpf: ~strudelHpf ? 20,
             strudelLpq: ~strudelLpq ? 1,
             strudelHpq: ~strudelHpq ? 1,
+            strudelLpEnv: ~strudelLpEnv ? 0,
+            strudelHpEnv: ~strudelHpEnv ? 0,
+            strudelLpAttack: ~strudelLpAttack ? 0.005,
+            strudelLpDecay: ~strudelLpDecay ? 0.14,
+            strudelLpSustain: ~strudelLpSustain ? 0,
+            strudelLpRelease: ~strudelLpRelease ? 0.1,
+            strudelHpAttack: ~strudelHpAttack ? 0.005,
+            strudelHpDecay: ~strudelHpDecay ? 0.14,
+            strudelHpSustain: ~strudelHpSustain ? 0,
+            strudelHpRelease: ~strudelHpRelease ? 0.1,
+            strudelFanchor: ~strudelFanchor ? 0,
             out: ~out
           ])
       }, { ~strudelLpf.notNil || ~strudelHpf.notNil });
-    "*** Strudel filter module registered ***".postln;
+    "*** Strudel filter module registered (with envelope support) ***".postln;
     
-    // Re-order modules to put strudel_adsr and strudel_filter BEFORE out_to
+    // ========================================
+    // Strudel Tremolo Module (for SAMPLES and SYNTHS)
+    // Matches superdough's tremolo implementation with LFO shapes
+    // Uses custom parameter names to avoid triggering SuperDirt's dirt_tremolo
+    //
+    // Parameters:
+    // - strudelTremRate: LFO frequency in Hz
+    // - strudelTremDepth: modulation depth (0-1, can exceed 1 for clipping effects)
+    // - strudelTremSkew: triangle wave skew (0-1, 0.5 = symmetric)
+    // - strudelTremPhase: phase offset (0-1)
+    // - strudelTremShape: waveform (0=tri, 1=sine, 2=ramp, 3=saw, 4=square)
+    //
+    // superdough tremolo behavior:
+    // - Base gain = max(1 - depth, 0)
+    // - LFO adds to base gain with range [0, depth]
+    // - Result: amplitude modulates between (1-depth) and 1
+    // ========================================
+    
+    SynthDef("strudel_tremolo" ++ ${channels}, { |out,
+                                                  strudelTremRate = 1, strudelTremDepth = 1,
+                                                  strudelTremSkew = 0.5, strudelTremPhase = 0,
+                                                  strudelTremShape = 0|
+      var signal, lfo, phase, baseGain, modGain;
+      var triLfo, sineLfo, rampLfo, sawLfo, squareLfo;
+      var shapeIdx;
+      
+      signal = In.ar(out, ${channels});
+      
+      // Calculate phase with offset
+      phase = Phasor.ar(0, strudelTremRate / SampleRate.ir, 0, 1);
+      phase = (phase + strudelTremPhase).mod(1);
+      
+      // Pre-compute all LFO shapes (all are audio rate since phase is audio rate)
+      
+      // 0: Triangle with skew
+      // When phase < skew: ramp up from 0 to 1
+      // When phase >= skew: ramp down from 1 to 0
+      triLfo = (phase < strudelTremSkew).if(
+        phase / strudelTremSkew.max(0.001),
+        1 - ((phase - strudelTremSkew) / (1 - strudelTremSkew).max(0.001))
+      );
+      
+      // 1: Sine (0-1 range like superdough)
+      sineLfo = (1 + (phase * 2pi).sin) * 0.5;
+      
+      // 2: Ramp (0 to 1)
+      rampLfo = phase;
+      
+      // 3: Saw (1 to 0)
+      sawLfo = 1 - phase;
+      
+      // 4: Square with skew (duty cycle)
+      squareLfo = (phase < strudelTremSkew).if(1, 0);
+      
+      // Select shape using index
+      shapeIdx = strudelTremShape.round.clip(0, 4);
+      lfo = SelectX.ar(shapeIdx, [triLfo, sineLfo, rampLfo, sawLfo, squareLfo]);
+      
+      // superdough applies a curve: Math.pow(lfo, 1.5)
+      // This softens the LFO shape, making peaks rounder
+      lfo = lfo.pow(1.5);
+      
+      // superdough behavior: baseGain + lfo * depth
+      // where baseGain = max(1 - depth, 0)
+      // This means at depth=1: modulates 0 to 1
+      // At depth=0.5: modulates 0.5 to 1
+      baseGain = (1 - strudelTremDepth).max(0);
+      modGain = baseGain + (lfo * strudelTremDepth);
+      
+      signal = signal * modGain;
+      
+      ReplaceOut.ar(out, signal);
+    }, [\\ir, \\kr, \\kr, \\kr, \\kr, \\kr]).add;
+    "Added: strudel_tremolo${channels}".postln;
+    
+    // Register the strudel_tremolo module with SuperDirt
+    ~dirt.addModule('strudel_tremolo',
+      { |dirtEvent|
+        dirtEvent.sendSynth('strudel_tremolo' ++ ${channels},
+          [
+            strudelTremRate: ~strudelTremRate ? 1,
+            strudelTremDepth: ~strudelTremDepth ? 1,
+            strudelTremSkew: ~strudelTremSkew ? 0.5,
+            strudelTremPhase: ~strudelTremPhase ? 0,
+            strudelTremShape: ~strudelTremShape ? 0,
+            out: ~out
+          ])
+      }, { ~strudelTremRate.notNil });
+    "*** Strudel tremolo module registered ***".postln;
+    
+    // Re-order modules to put strudel modules BEFORE out_to
     // Without this, our modules run AFTER the signal is sent to output
     ~dirt.orderModules([
         'sound', 'vowel', 'shape', 'hpf', 'bpf', 'crush', 'coarse', 'lpf',
@@ -781,8 +938,9 @@ s.waitForBoot {
         'spectral-delay', 'spectral-freeze', 'spectral-comb', 'spectral-smear',
         'spectral-scram', 'spectral-binshift', 'spectral-hbrick', 'spectral-lbrick',
         'spectral-conformer', 'spectral-enhance', 'dj-filter', 'compressor',
-        'strudel_adsr',    // Our ADSR module
-        'strudel_filter',  // Our filter module
+        'strudel_adsr',      // Our ADSR module
+        'strudel_tremolo',   // Our tremolo module (before filter for consistent behavior)
+        'strudel_filter',    // Our filter module
         'out_to', 'map_from'
     ]);
     "*** Module order updated (strudel modules before out_to) ***".postln;
