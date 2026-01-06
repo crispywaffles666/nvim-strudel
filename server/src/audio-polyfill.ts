@@ -19,6 +19,12 @@
 import * as nodeWebAudio from 'node-web-audio-api';
 import { initWorkletPolyfill } from './worklet-polyfill.js';
 
+// IMPORTANT: Expose DelayNode globally immediately so that superdough's feedbackdelay.mjs
+// can detect it and add createFeedbackDelay to AudioContext.prototype.
+// feedbackdelay.mjs checks: if (typeof DelayNode !== 'undefined')
+// This must happen at module evaluation time, before superdough is imported.
+(globalThis as any).DelayNode = nodeWebAudio.DelayNode;
+
 // Store whether we've initialized
 let initialized = false;
 
@@ -315,6 +321,66 @@ export function initAudioPolyfill(): void {
 
   // Add all node-web-audio-api exports to globalThis
   Object.assign(globalThis, nodeWebAudio);
+  
+  // CRITICAL: Add createFeedbackDelay to nodeWebAudio.AudioContext.prototype FIRST
+  // This ensures the method is available even on raw contexts created in capture/offline modes.
+  // superdough's Orbit class stores a reference to the audioContext and calls 
+  // this.audioContext.createFeedbackDelay() later, so the method must be on the prototype.
+  if (!(nodeWebAudio.AudioContext.prototype as any).createFeedbackDelay) {
+    const { DelayNode } = nodeWebAudio;
+    
+    // FeedbackDelayNode extends DelayNode with wet gain and feedback loop
+    class FeedbackDelayNode extends DelayNode {
+      private delayGainNode: GainNode;
+      public feedback: AudioParam;
+      public delayGain: GainNode;
+      
+      constructor(ac: AudioContext, wet: number, time: number, feedbackAmount: number) {
+        super(ac as any);
+        wet = Math.abs(wet);
+        this.delayTime.value = time;
+        
+        // Create feedback gain node for the feedback loop
+        const feedbackGain = ac.createGain();
+        feedbackGain.gain.value = Math.min(Math.abs(feedbackAmount), 0.995);
+        this.feedback = feedbackGain.gain;
+        
+        // Create delay gain node for wet/dry mix
+        const delayGain = ac.createGain();
+        delayGain.gain.value = wet;
+        this.delayGainNode = delayGain;
+        this.delayGain = delayGain;
+        
+        // Connect the feedback loop:
+        // delay -> feedbackGain -> delay (loop)
+        // delay -> delayGain -> output
+        (this as any).connect(feedbackGain);
+        (this as any).connect(delayGain);
+        feedbackGain.connect(this as any);
+      }
+      
+      // Override connect to route through the wet gain
+      connect(target: any, outputIndex?: number, inputIndex?: number): any {
+        return this.delayGainNode.connect(target, outputIndex, inputIndex);
+      }
+      
+      start(t: number): void {
+        // Set the delay gain at the time when the delay starts producing output
+        this.delayGainNode.gain.setValueAtTime(this.delayGainNode.gain.value, t + this.delayTime.value);
+      }
+    }
+    
+    (nodeWebAudio.AudioContext.prototype as any).createFeedbackDelay = function(
+      this: AudioContext,
+      wet: number,
+      time: number,
+      feedback: number
+    ): FeedbackDelayNode {
+      return new FeedbackDelayNode(this, wet, time, feedback);
+    };
+    
+    console.log('[audio-polyfill] Added createFeedbackDelay to nodeWebAudio.AudioContext.prototype');
+  }
 
   // Check if we're in offline rendering mode
   if (offlineConfig) {
@@ -502,36 +568,57 @@ export function initAudioPolyfill(): void {
     console.error('[audio-polyfill] AudioContext not available after polyfill!');
     return;
   }
+  
+  // IMPORTANT: Add methods to BOTH the global AudioContext.prototype AND 
+  // nodeWebAudio.AudioContext.prototype. This is needed because in capture mode,
+  // we create a raw nodeWebAudio.AudioContext which doesn't go through our wrapper.
+  // Adding to the nodeWebAudio prototype ensures all contexts have these methods.
+  const prototypesToPatch = [
+    AudioContext.prototype,
+    nodeWebAudio.AudioContext.prototype,
+  ];
+  
+  // Filter to unique prototypes (they might be the same in normal mode)
+  const uniquePrototypes = [...new Set(prototypesToPatch)];
+  
+  // Helper to add a method to all AudioContext prototypes
+  const addToAllPrototypes = (name: string, method: Function) => {
+    for (const proto of uniquePrototypes) {
+      if (!(proto as any)[name]) {
+        (proto as any)[name] = method;
+      }
+    }
+  };
 
   // Add adjustLength method (from superdough/reverb.mjs)
-  if (!AudioContext.prototype.adjustLength) {
-    AudioContext.prototype.adjustLength = function(
-      duration: number,
-      buffer: AudioBuffer,
-      speed = 1,
-      offsetAmount = 0
-    ): AudioBuffer {
-      const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
-      const sampleOffset = Math.floor(clamp(offsetAmount, 0, 1) * buffer.length);
-      const newLength = buffer.sampleRate * duration;
-      const newBuffer = this.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-      
-      for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-        const oldData = buffer.getChannelData(channel);
-        const newData = newBuffer.getChannelData(channel);
+  const adjustLengthMethod = function(
+    this: AudioContext,
+    duration: number,
+    buffer: AudioBuffer,
+    speed = 1,
+    offsetAmount = 0
+  ): AudioBuffer {
+    const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
+    const sampleOffset = Math.floor(clamp(offsetAmount, 0, 1) * buffer.length);
+    const newLength = buffer.sampleRate * duration;
+    const newBuffer = this.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+    
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      const oldData = buffer.getChannelData(channel);
+      const newData = newBuffer.getChannelData(channel);
 
-        for (let i = 0; i < newLength; i++) {
-          let position = (sampleOffset + i * Math.abs(speed)) % oldData.length;
-          if (speed < 1) {
-            position = position * -1;
-          }
-          newData[i] = oldData[Math.floor(position)] || 0;
+      for (let i = 0; i < newLength; i++) {
+        let position = (sampleOffset + i * Math.abs(speed)) % oldData.length;
+        if (speed < 1) {
+          position = position * -1;
         }
+        newData[i] = oldData[Math.floor(position)] || 0;
       }
-      return newBuffer;
-    };
-    console.log('[audio-polyfill] Added AudioContext.prototype.adjustLength');
-  }
+    }
+    return newBuffer;
+  };
+  addToAllPrototypes('adjustLength', adjustLengthMethod);
+  console.log('[audio-polyfill] Added AudioContext.prototype.adjustLength');
 
   // Add createReverb method (from superdough/reverb.mjs)
   if (!AudioContext.prototype.createReverb) {
@@ -620,7 +707,7 @@ export function initAudioPolyfill(): void {
     };
     console.log('[audio-polyfill] Added AudioContext.prototype.createReverb');
   }
-
+  
   // Initialize AudioWorklet polyfill for processors like shape, crush, etc.
   initWorkletPolyfill();
 
