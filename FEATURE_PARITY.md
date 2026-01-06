@@ -92,6 +92,19 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Pitch env (saw) | `note("c4").s("saw").penv(12).pdecay(0.3)` | 0.83 | 86.6% | Good |
 | Pitch + vibrato | `note("c4").s("saw").penv(12).pdecay(0.3).vib(5)` | 0.85 | 87.0% | Good |
 
+### FM Synthesis
+
+| Feature | Pattern | Spectral | Similarity | Status |
+|---------|---------|----------|------------|--------|
+| FM basic (sine) | `note("c4").s("sine").fm(2)` | 0.91 | 91.1% | Good |
+| FM + harmonicity | `note("c4").s("sine").fm(2).fmh(2)` | 0.61 | 72.5% | Fair |
+| FM + envelope | `note("c4").s("sine").fm(4).fmdecay(0.2)` | 0.46 | 67.1% | Fair |
+| FM (triangle) | `note("c4").s("triangle").fm(2)` | 0.92 | 92.5% | Good |
+| FM (saw) | `note("c4").s("saw").fm(2)` | - | - | Poor - band-limited issues |
+| FM (square) | `note("c4").s("square").fm(2)` | - | - | Poor - band-limited issues |
+
+*Note: FM synthesis works best with sine and triangle carriers. Band-limited oscillators (saw, square) have parity issues with audio-rate frequency modulation.*
+
 ### Effects
 
 | Feature | Pattern | Spectral | Similarity | Status |
@@ -133,19 +146,14 @@ Based on tested features (excluding noise which is inherently random):
 | Tremolo | 96.7% | Excellent |
 | ADSR | 93.8% | Good |
 | Pitch Mod | 91.2% | Good |
+| FM Synth | 80.8% | Fair (sine/tri only) |
 | Effects | 89.6% | Good |
 | Noise | RMS ±0.5dB | Excellent (level-matched) |
-| **Overall** | **92.0%** | **Good** |
+| **Overall** | **91.2%** | **Good** |
 
 ---
 
 ## Not Implemented
-
-### High Priority (commonly used)
-
-| Feature | Controls | Difficulty | Notes |
-|---------|----------|------------|-------|
-| FM Synthesis | `fmi`, `fmh`, `fmenv`, `fmattack`, `fmdecay`, `fmsustain`, `fmrelease` | Hard | Frequency modulation |
 
 ### Medium Priority
 
@@ -173,6 +181,7 @@ Based on tested features (excluding noise which is inherently random):
 2. **Pan law** - Slight level differences at extreme pan positions (84.1%)
 3. **Delay feedback** - Minor differences in feedback behavior (77.9%)
 4. **HPF basic** - Slight frequency response difference (76.5%)
+5. **FM on saw/square** - Band-limited oscillators react differently to audio-rate FM
 
 ### Resolved
 - ~~Filter Q scaling~~ - Fixed with 1/sqrt(Q) mapping (65% → 84-96%)

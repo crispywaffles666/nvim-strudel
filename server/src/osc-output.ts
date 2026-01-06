@@ -794,6 +794,14 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     delete controls.djf;
   }
   
+  // FM synthesis parameters
+  // fm is an alias for fmi (modulation index) - convert to fmi for synths
+  // fmi, fmh, fmattack, fmdecay, fmsustain, fmrelease pass through directly
+  if (controls.fm !== undefined) {
+    controls.fmi = controls.fm;
+    delete controls.fm;
+  }
+  
   // Convert gain to SuperDirt's gain curve (applies to all synth sounds)
   controls.gain = convertGainForSuperDirt(controls.gain);
 
