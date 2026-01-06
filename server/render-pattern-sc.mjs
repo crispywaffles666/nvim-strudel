@@ -16,7 +16,10 @@ import { execSync, spawn } from 'child_process';
 import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdtempSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { tmpdir } from 'os';
+import { tmpdir, homedir } from 'os';
+
+// Strudel samples cache directory - matches sample-manager.ts
+const STRUDEL_SAMPLES_DIR = join(homedir(), '.local', 'share', 'strudel-samples');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -168,6 +171,7 @@ const scScriptPath = join(tmpDir, 'render.scd');
 // 4. SC starts recording
 // 5. SC waits for duration, then stops recording and exits
 const startFlagPath = join(tmpDir, 'start.flag').replace(/\\/g, '/');
+const escapedSamplesDir = STRUDEL_SAMPLES_DIR.replace(/\\/g, '/');
 const scScript = `
 // Strudel Pattern Renderer with Recording
 // Auto-generated script
@@ -188,6 +192,16 @@ s.waitForBoot {
         // Start SuperDirt
         ~dirt = SuperDirt(2, s);
         ~dirt.loadSoundFiles;
+        
+        // Load Strudel samples cache if it exists
+        ~strudelSamplesPath = "${escapedSamplesDir}";
+        if(File.exists(~strudelSamplesPath), {
+            "Loading Strudel samples from: %".format(~strudelSamplesPath).postln;
+            ~dirt.loadSoundFiles(~strudelSamplesPath +/+ "*");
+        }, {
+            "Strudel samples cache not found (will be created when samples are loaded)".postln;
+        });
+        
         s.sync;
         ~dirt.start(57120, [0, 0]);
         "SuperDirt started on port 57120".postln;
