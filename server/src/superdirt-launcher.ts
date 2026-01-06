@@ -572,26 +572,32 @@ s.waitForBoot {
     SynthDef("strudel_filter" ++ ${channels}, { |out, sustain = 1,
                                                  strudelLpf = 20000, strudelHpf = 20,
                                                  strudelLpq = 1, strudelHpq = 1,
+                                                 strudelBpf = 0, strudelBpq = 1,
                                                  strudelLpEnv = 0, strudelHpEnv = 0,
                                                  strudelLpAttack = 0.005, strudelLpDecay = 0.14,
                                                  strudelLpSustain = 0, strudelLpRelease = 0.1,
                                                  strudelHpAttack = 0.005, strudelHpDecay = 0.14,
                                                  strudelHpSustain = 0, strudelHpRelease = 0.1,
                                                  strudelFanchor = 0|
-      var signal, rqLpf, rqHpf, lpfFreq, hpfFreq;
+      var signal, rqLpf, rqHpf, rqBpf, lpfFreq, hpfFreq, bpfFreq;
       var lpfEnvFreq, hpfEnvFreq, lpfEnv, hpfEnv;
       var lpfEnvAbs, hpfEnvAbs, lpfOffset, hpfOffset, lpfMin, lpfMax, hpfMin, hpfMax;
       
       signal = In.ar(out, ${channels});
       
-      // Convert Q to rq (reciprocal of Q)
-      // Q = 1 gives rq = 1 (no resonance), Q > 1 gives narrower resonance
-      rqLpf = (1/strudelLpq.max(0.001)).clip(0.01, 2);
-      rqHpf = (1/strudelHpq.max(0.001)).clip(0.01, 2);
+      // Convert Q to rq for SuperCollider's RLPF/RHPF/BPF
+      // WebAudio BiquadFilter uses Q directly, SC uses rq = 1/Q
+      // However, the resonance gain differs between implementations.
+      // Using 1/sqrt(Q) instead of 1/Q reduces SC's resonance to match WebAudio better.
+      // Empirically tested: 1/Q gives +4-6dB difference at high Q, 1/sqrt(Q) is closer.
+      rqLpf = (1/strudelLpq.max(0.001).sqrt).clip(0.01, 2);
+      rqHpf = (1/strudelHpq.max(0.001).sqrt).clip(0.01, 2);
+      rqBpf = (1/strudelBpq.max(0.001).sqrt).clip(0.01, 2);
       
       // Base frequencies
       lpfFreq = strudelLpf.clip(20, 20000);
       hpfFreq = strudelHpf.clip(20, 20000);
+      bpfFreq = strudelBpf.clip(20, 20000);
       
       // Apply filter envelopes if env amount is non-zero
       // superdough uses octave-based envelope: freq * 2^(env * envelope_value)
@@ -632,17 +638,24 @@ s.waitForBoot {
       ]);
       hpfEnvFreq = Select.kr(strudelHpEnv.abs > 0.001, [hpfFreq, hpfEnvFreq]);
       
-      // Apply both filters
+      // Apply filters
+      // LPF and HPF always applied (with neutral defaults: LPF=20000, HPF=20)
       signal = RLPF.ar(signal, lpfEnvFreq, rqLpf);
       signal = RHPF.ar(signal, hpfEnvFreq, rqHpf);
       
+      // BPF only applied when strudelBpf > 0 (default is 0 = disabled)
+      signal = Select.ar(strudelBpf > 0, [
+        signal,
+        BPF.ar(signal, bpfFreq, rqBpf)
+      ]);
+      
       ReplaceOut.ar(out, signal);
-    }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
-    "Added: strudel_filter${channels} (with envelope support)".postln;
+    }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
+    "Added: strudel_filter${channels} (with envelope support and BPF)".postln;
     
     // Register the strudel_filter module with SuperDirt
-    // This module triggers when strudelLpf or strudelHpf parameters are present
-    // and applies our filters INSTEAD of SuperDirt's dirt_lpf/dirt_hpf modules
+    // This module triggers when strudelLpf, strudelHpf, or strudelBpf parameters are present
+    // and applies our filters INSTEAD of SuperDirt's dirt_lpf/dirt_hpf/dirt_bpf modules
     ~dirt.addModule('strudel_filter',
       { |dirtEvent|
         dirtEvent.sendSynth('strudel_filter' ++ ${channels},
@@ -652,6 +665,8 @@ s.waitForBoot {
             strudelHpf: ~strudelHpf ? 20,
             strudelLpq: ~strudelLpq ? 1,
             strudelHpq: ~strudelHpq ? 1,
+            strudelBpf: ~strudelBpf ? 0,
+            strudelBpq: ~strudelBpq ? 1,
             strudelLpEnv: ~strudelLpEnv ? 0,
             strudelHpEnv: ~strudelHpEnv ? 0,
             strudelLpAttack: ~strudelLpAttack ? 0.005,
@@ -665,8 +680,8 @@ s.waitForBoot {
             strudelFanchor: ~strudelFanchor ? 0,
             out: ~out
           ])
-      }, { ~strudelLpf.notNil || ~strudelHpf.notNil });
-    "*** Strudel filter module registered (with envelope support) ***".postln;
+      }, { ~strudelLpf.notNil || ~strudelHpf.notNil || ~strudelBpf.notNil });
+    "*** Strudel filter module registered (with envelope support and BPF) ***".postln;
     
     // ========================================
     // Strudel Tremolo Module (for SAMPLES and SYNTHS)

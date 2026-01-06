@@ -681,6 +681,25 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     delete controls.hpq;
   }
   
+  // Handle bandpass filter - redirect to our strudel_filter module
+  // bandf/bandq are Strudel's BPF parameters
+  if (controls.bandf !== undefined && controls.strudelBpf === undefined) {
+    controls.strudelBpf = controls.bandf;
+    delete controls.bandf;
+  }
+  if (controls.bandq !== undefined && controls.strudelBpq === undefined) {
+    controls.strudelBpq = controls.bandq;
+    delete controls.bandq;
+  }
+  if (controls.bpf !== undefined && controls.strudelBpf === undefined) {
+    controls.strudelBpf = controls.bpf;
+    delete controls.bpf;
+  }
+  if (controls.bpq !== undefined && controls.strudelBpq === undefined) {
+    controls.strudelBpq = controls.bpq;
+    delete controls.bpq;
+  }
+  
   // Handle filter envelope parameters for lowpass filter
   // superdough uses: lpenv (amount in octaves), lpattack, lpdecay, lpsustain, lprelease, fanchor
   if (controls.lpenv !== undefined) {
