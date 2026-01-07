@@ -850,6 +850,39 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     delete controls.fm;
   }
   
+  // FM envelope smart defaults (matches superdough's getADSRValues behavior)
+  // When only some envelope params are set, others get smart defaults:
+  // - If only decay is set -> sustain defaults to 0.001 (AD envelope)
+  // - If only attack is set -> sustain defaults to 1 (AS envelope)
+  // - Otherwise sustain defaults to 1 (full sustain)
+  if (controls.fmi !== undefined && controls.fmi > 0) {
+    const fmA = controls.fmattack;
+    const fmD = controls.fmdecay;
+    const fmS = controls.fmsustain;
+    const fmR = controls.fmrelease;
+    
+    // Only apply smart defaults if some params are set but sustain is not
+    if (fmS === undefined && (fmA !== undefined || fmD !== undefined || fmR !== undefined)) {
+      // Match superdough: if attack is set but decay is not, sustain = 1
+      // Otherwise (decay set, or nothing set), sustain = 0.001
+      if ((fmA !== undefined && fmD === undefined) || (fmA === undefined && fmD === undefined)) {
+        controls.fmsustain = 1;
+      } else {
+        controls.fmsustain = 0.001;  // AD-style envelope when decay is set
+      }
+    }
+    
+    // Default attack to 0.001 (minimum) if not set but other params are
+    if (fmA === undefined && (fmD !== undefined || fmR !== undefined)) {
+      controls.fmattack = 0.001;
+    }
+    
+    // Default release to 0.01 (minimum) if not set but other params are  
+    if (fmR === undefined && (fmA !== undefined || fmD !== undefined)) {
+      controls.fmrelease = 0.01;
+    }
+  }
+  
   // Convert gain to SuperDirt's gain curve (applies to all synth sounds)
   controls.gain = convertGainForSuperDirt(controls.gain);
 

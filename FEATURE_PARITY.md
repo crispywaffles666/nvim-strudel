@@ -98,10 +98,10 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 
 | Feature | Pattern | Spectral | Similarity | Status |
 |---------|---------|----------|------------|--------|
-| FM basic (sine) | `note("c4").s("sine").fm(2)` | 0.91 | 91.1% | Good |
-| FM + harmonicity | `note("c4").s("sine").fm(2).fmh(2)` | 0.61 | 72.5% | Fair |
-| FM + envelope | `note("c4").s("sine").fm(4).fmdecay(0.2)` | 0.46 | 67.1% | Fair |
-| FM (triangle) | `note("c4").s("triangle").fm(2)` | 0.92 | 92.5% | Good |
+| FM basic (sine) | `note("c4").s("sine").fm(2)` | 0.90 | 90.2% | Good |
+| FM + harmonicity | `note("c4").s("sine").fm(2).fmh(2)` | 1.00 | 97.2% | Excellent |
+| FM + envelope | `note("c4").s("sine").fm(4).fmdecay(0.2)` | 0.98 | 96.8% | Excellent |
+| FM (triangle) | `note("c4").s("triangle").fm(2)` | 0.94 | 90.6% | Good |
 | FM (saw) | `note("c4").s("saw").fm(2)` | - | - | Poor - band-limited issues |
 | FM (square) | `note("c4").s("square").fm(2)` | - | - | Poor - band-limited issues |
 
@@ -150,10 +150,10 @@ Based on tested features (excluding noise which is inherently random):
 | Tremolo | 96.7% | Excellent |
 | ADSR | 93.8% | Good |
 | Pitch Mod | 91.2% | Good |
-| FM Synth | 80.8% | Fair (sine/tri only) |
+| FM Synth | 93.7% | Good |
 | Effects | 90.1% | Good |
 | Noise | RMS ±0.5dB | Excellent (level-matched) |
-| **Overall** | **91.8%** | **Good** |
+| **Overall** | **92.4%** | **Good** |
 
 ---
 
@@ -216,8 +216,13 @@ cd server && node compare-backends.mjs --all
 - Verified delay and pan improvements from previous session
   - **Delay**: 77.9% → 89.0% (+11.1%) - feedback mapping working well
   - **Pan**: 84.1% → 93.5% (+9.4%) - now consistent across all positions
+- Fixed FM envelope smart defaults to match superdough's getADSRValues behavior
+  - When only `fmdecay` is set, sustain now defaults to 0.001 (AD envelope)
+  - **FM + harmonicity**: 72.5% → 97.2% (+24.7%) - major improvement
+  - **FM + envelope**: 67.1% → 96.8% (+29.7%) - major improvement
 - Updated Effects category average: 87.5% → 90.1%
-- Updated Overall score: 91.4% → 91.8%
+- Updated FM Synth category average: 80.8% → 93.7%
+- Updated Overall score: 91.4% → 92.4%
 
 ### 2026-01-06 (Session 7)
 - Switched LPF/HPF to use biquad filters (BLowPass/BHiPass) instead of RLPF/RHPF
