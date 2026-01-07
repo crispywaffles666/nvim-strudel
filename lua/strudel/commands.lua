@@ -22,6 +22,18 @@ function M.setup()
 
     local cfg = config.get()
 
+    -- Helper to connect and wait for actual connection
+    local function connect_and_wait(cb)
+      -- Register one-time callback for when connection is established
+      if cb then
+        client.once('connect', function()
+          -- Small delay to ensure connection is fully ready
+          vim.defer_fn(cb, 50)
+        end)
+      end
+      client.connect()
+    end
+
     -- Auto-start server if configured
     if cfg.server.auto_start and not utils.is_server_running() then
       local strudel = require('strudel')
@@ -30,14 +42,10 @@ function M.setup()
       if server_cmd then
         utils.log('Starting server...')
         utils.start_server(server_cmd, function()
-          -- Connect after server starts
+          -- Connect after server starts - wait for "listening on" message
           vim.defer_fn(function()
-            client.connect()
-            -- Wait a bit for connection to establish, then callback
-            if callback then
-              vim.defer_fn(callback, 200)
-            end
-          end, 500)
+            connect_and_wait(callback)
+          end, 200)
         end)
         return false
       else
@@ -48,10 +56,7 @@ function M.setup()
 
     -- Server running but not connected - just connect
     utils.log('Connecting...')
-    client.connect()
-    if callback then
-      vim.defer_fn(callback, 200)
-    end
+    connect_and_wait(callback)
     return false
   end
 

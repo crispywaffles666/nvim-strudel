@@ -217,7 +217,7 @@ s.waitForBoot {
         // This envelope is flat (level=1) and just controls synth duration via doneAction
         // The actual amplitude shaping happens in the common strudel_adsr module
         env = EnvGen.kr(
-          Env.new([1, 1], [sfSustain + 0.1], \lin),
+          Env.new([1, 1], [sfSustain + 0.1], \\lin),
           doneAction: 2
         );
         
@@ -237,7 +237,7 @@ s.waitForBoot {
         sound = DirtPan.ar(sound, ${channels}, pan) * sqrt(2);
         
         Out.ar(out, sound)
-      }, [\ir, \ir, \ir, \ir, \ir, \ir, \ir, \ir, \kr, \ir, \ir, \ir]).add;
+      }, [\\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr, \\ir, \\ir, \\ir]).add;
       
       ("Strudel: Added " ++ name).postln;
     };

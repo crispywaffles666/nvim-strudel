@@ -261,11 +261,14 @@ end
 ---@param bufnr? number
 ---@return boolean
 function M.eval(code, bufnr)
-  return M.send({
+  utils.debug('eval() called, connected=' .. tostring(state.connected) .. ', code length=' .. #code)
+  local result = M.send({
     type = 'eval',
     code = code,
     bufnr = bufnr,
   })
+  utils.debug('eval() send result=' .. tostring(result))
+  return result
 end
 
 ---Send play command
