@@ -804,11 +804,12 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     delete controls.fanchor;
   }
   
-  // Filter type: '12db' (default) or '24db' (cascade two filters for steeper slope)
-  // superdough also supports 'ladder' but that requires a different filter model
+  // Filter type: '12db' (default), '24db' (cascade two filters), or 'ladder' (Moog-style)
   if (controls.ftype !== undefined) {
     if (controls.ftype === '24db') {
       controls.strudelFtype = 1;  // 24dB mode - cascade filters
+    } else if (controls.ftype === 'ladder') {
+      controls.strudelFtype = 2;  // Ladder mode - MoogFF filter
     } else {
       controls.strudelFtype = 0;  // 12dB mode (default)
     }

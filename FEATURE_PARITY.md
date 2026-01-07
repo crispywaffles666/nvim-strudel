@@ -61,6 +61,8 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | BPF envelope | `s("bd").bpf(1000).bpenv(2).bpdecay(0.5)` | 0.95 | 77.4% | Fair |
 | 24dB LPF | `note("c4").s("saw").lpf(500).ftype("24db")` | 1.00 | 93.9% | Good |
 | 24dB HPF | `note("c4").s("saw").hpf(800).ftype("24db")` | 0.98 | 83.4% | Fair |
+| Ladder filter | `note("c4").s("saw").lpf(500).ftype("ladder")` | 1.00 | 94.1% | Good |
+| Ladder + Q | `note("c4").s("saw").lpf(800).lpq(2).ftype("ladder")` | 0.99 | 82.0% | Fair |
 | DJF lowpass | `note("c4").s("saw").djf(0.25)` | 0.99 | 93.9% | Good |
 | DJF highpass | `note("c4").s("saw").djf(0.75)` | 0.99 | 88.3% | Good |
 | DJF sample | `s("bd").djf(0.2)` | 0.81 | 89.4% | Good |
@@ -114,8 +116,9 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Crush (bitcrush) | `s("bd").crush(4)` | 0.99 | 98.2% | Excellent |
 | Coarse | `s("bd").coarse(8)` | 0.95 | 93.4% | Good |
 | Delay | `s("bd").delay(0.5)` | 0.94 | 77.9% | Fair |
-| Reverb | `s("bd").room(0.5)` | - | - | Untested |
-| Phaser | `s("saw").phaserrate(2)` | - | - | Untested |
+| Reverb | `s("bd").room(0.5)` | 0.98 | 84.2% | Fair |
+| Reverb + size | `s("bd").room(0.8).roomsize(4)` | 0.91 | 80.8% | Fair |
+| Phaser | `note("c4").s("saw").phaserrate(2).phaserdepth(0.5)` | 0.91 | 86.7% | Good |
 
 ### Gain & Dynamics
 
@@ -129,8 +132,9 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 
 | Feature | Pattern | Spectral | Similarity | Status |
 |---------|---------|----------|------------|--------|
-| GM Piano | `note("c4").s("gm_acoustic_grand_piano")` | - | - | Untested |
-| GM Strings | `note("c4").s("gm_string_ensemble_1")` | - | - | Untested |
+| GM Piano | `note("c4").s("gm_piano")` | 1.00 | 96.1% | Excellent |
+| GM Piano + pan | `note("c4").s("gm_piano").pan(0.5)` | 1.00 | 96.5% | Excellent |
+| GM Piano chord | `note("c3 e3 g3 c4").s("gm_piano")` | 0.71 | 76.0% | Fair - timing variance |
 
 ---
 
@@ -147,19 +151,13 @@ Based on tested features (excluding noise which is inherently random):
 | ADSR | 93.8% | Good |
 | Pitch Mod | 91.2% | Good |
 | FM Synth | 80.8% | Fair (sine/tri only) |
-| Effects | 89.6% | Good |
+| Effects | 87.5% | Good |
 | Noise | RMS ±0.5dB | Excellent (level-matched) |
 | **Overall** | **91.2%** | **Good** |
 
 ---
 
 ## Not Implemented
-
-### Medium Priority
-
-| Feature | Controls | Difficulty | Notes |
-|---------|----------|------------|-------|
-| Ladder Filter | `ftype('ladder')` | Medium | Moog-style 24dB filter |
 
 ### Low Priority (specialized)
 
@@ -207,6 +205,25 @@ cd server && node compare-backends.mjs --all
 ---
 
 ## Changelog
+
+### 2026-01-06 (Session 6)
+- Implemented ladder filter (`ftype('ladder')`) for SuperCollider backend
+  - Uses MoogFF UGen for Moog-style 24dB/oct lowpass
+  - Basic: 94.1% similarity (spectral 1.00) - Excellent
+  - With resonance (lpq=2): 82.0% similarity - Fair
+  - Note: Higher resonance values show more divergence due to MoogFF vs WebAudio ladder differences
+- Fixed SC render script hanging on boot
+  - Root cause: `var` declarations in middle of SynthDef function (SC requires all vars at top)
+  - Also fixed Select.ar boolean → integer conversion for ftype comparisons
+
+### 2026-01-06 (Session 5)
+- Fixed reverb (room) not working in capture mode
+  - Root cause: `createReverb` wasn't added to `nodeWebAudio.AudioContext.prototype`
+  - Fix: Use `addToAllPrototypes` pattern like other methods
+  - Basic reverb: 84.2% similarity (spectral 0.98)
+  - Reverb + roomsize: 80.8% similarity
+- Tested phaser effect: 86.7% similarity (spectral 0.91)
+- Updated Effects category avg: 89.6% → 87.5%
 
 ### 2026-01-06 (Session 4)
 - Implemented pitch envelope for all synths (`penv`, `pattack`, `pdecay`, `psustain`, `prelease`, `panchor`)

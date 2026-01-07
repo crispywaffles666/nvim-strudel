@@ -947,6 +947,7 @@ s.waitForBoot {
       var lpfEnvAbs, hpfEnvAbs, bpfEnvAbs, lpfOffset, hpfOffset, bpfOffset;
       var lpfMin, lpfMax, hpfMin, hpfMax, bpfMin, bpfMax;
       var djfV, djfCutoff, djfSignal;
+      var ladderRes, ladderFiltered, standardFiltered;
       
       signal = In.ar(out, ${channels});
       
@@ -1050,17 +1051,31 @@ s.waitForBoot {
       
       // Apply filters
       // LPF and HPF always applied (with neutral defaults: LPF=20000, HPF=20)
-      // strudelFtype: 0 = 12dB/oct (single filter), 1 = 24dB/oct (cascade two filters)
-      signal = RLPF.ar(signal, lpfEnvFreq, rqLpf);
-      signal = Select.ar(strudelFtype > 0, [
-        signal,
-        RLPF.ar(signal, lpfEnvFreq, rqLpf)  // Second pass for 24dB slope
+      // strudelFtype: 0 = 12dB/oct (single filter), 1 = 24dB/oct (cascade two filters), 2 = ladder (MoogFF)
+      
+      // Ladder filter mode (strudelFtype == 2)
+      // MoogFF is a Moog-style 24dB/oct lowpass with self-oscillation capability
+      // It takes resonance as a value from 0-4 (not rq), so we use Q directly scaled to 0-4
+      // The drive/saturation is applied via tanh distortion after the filter
+      ladderRes = (strudelLpq * 0.4).clip(0, 4);  // Scale Q (typically 0-10) to MoogFF res (0-4)
+      ladderFiltered = MoogFF.ar(signal, lpfEnvFreq, ladderRes);
+      // Apply soft saturation similar to superdough's ladder processor
+      ladderFiltered = ladderFiltered.tanh;
+      
+      // Standard filter mode (12dB or 24dB biquad)
+      standardFiltered = RLPF.ar(signal, lpfEnvFreq, rqLpf);
+      standardFiltered = Select.ar(strudelFtype > 0, [
+        standardFiltered,
+        RLPF.ar(standardFiltered, lpfEnvFreq, rqLpf)  // Second pass for 24dB slope
       ]);
       
+      // Select between ladder and standard filter based on strudelFtype
+      signal = Select.ar((strudelFtype >= 2).asInteger, [standardFiltered, ladderFiltered]);
+      
       signal = RHPF.ar(signal, hpfEnvFreq, rqHpf);
-      signal = Select.ar(strudelFtype > 0, [
+      signal = Select.ar((strudelFtype == 1).asInteger, [
         signal,
-        RHPF.ar(signal, hpfEnvFreq, rqHpf)  // Second pass for 24dB slope
+        RHPF.ar(signal, hpfEnvFreq, rqHpf)  // Second pass for 24dB slope (only in 24db mode, not ladder)
       ]);
       
       // BPF only applied when strudelBpf > 0 (default is 0 = disabled)
@@ -1076,7 +1091,7 @@ s.waitForBoot {
       
       ReplaceOut.ar(out, signal);
     }, [\\ir, \\ir, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\kr, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\ir, \\kr]).add;
-    "Added: strudel_filter${channels} (with envelope support, BPF, 24dB mode, and DJF)".postln;
+    "Added: strudel_filter${channels} (with envelope support, BPF, 24dB mode, ladder filter, and DJF)".postln;
     
     // Register the strudel_filter module with SuperDirt
     // This module triggers when strudelLpf, strudelHpf, strudelBpf, or strudelDjf parameters are present
@@ -1113,7 +1128,7 @@ s.waitForBoot {
             out: ~out
           ])
       }, { ~strudelLpf.notNil || ~strudelHpf.notNil || ~strudelBpf.notNil || ~strudelDjf.notNil });
-    "*** Strudel filter module registered (with envelope support, BPF, 24dB mode, and DJF) ***".postln;
+    "*** Strudel filter module registered (with envelope support, BPF, 24dB mode, ladder filter, and DJF) ***".postln;
     
     // ========================================
     // Strudel Tremolo Module (for SAMPLES and SYNTHS)

@@ -621,92 +621,94 @@ export function initAudioPolyfill(): void {
   console.log('[audio-polyfill] Added AudioContext.prototype.adjustLength');
 
   // Add createReverb method (from superdough/reverb.mjs)
-  if (!AudioContext.prototype.createReverb) {
-    AudioContext.prototype.createReverb = function(
-      duration?: number,
-      fade?: number,
-      lp?: number,
-      dim?: number,
-      ir?: AudioBuffer,
-      irspeed?: number,
-      irbegin?: number
-    ): ConvolverNode & { generate: Function; duration?: number; fade?: number; lp?: number; dim?: number; ir?: AudioBuffer; irspeed?: number; irbegin?: number } {
-      const convolver = this.createConvolver() as ConvolverNode & {
-        generate: Function;
-        duration?: number;
-        fade?: number;
-        lp?: number;
-        dim?: number;
-        ir?: AudioBuffer;
-        irspeed?: number;
-        irbegin?: number;
-      };
+  // Uses addToAllPrototypes to ensure it's available on both global AudioContext
+  // and nodeWebAudio.AudioContext (needed for capture mode proxy)
+  const createReverbMethod = function(
+    this: AudioContext,
+    duration?: number,
+    fade?: number,
+    lp?: number,
+    dim?: number,
+    ir?: AudioBuffer,
+    irspeed?: number,
+    irbegin?: number
+  ): ConvolverNode & { generate: Function; duration?: number; fade?: number; lp?: number; dim?: number; ir?: AudioBuffer; irspeed?: number; irbegin?: number } {
+    const convolver = this.createConvolver() as ConvolverNode & {
+      generate: Function;
+      duration?: number;
+      fade?: number;
+      lp?: number;
+      dim?: number;
+      ir?: AudioBuffer;
+      irspeed?: number;
+      irbegin?: number;
+    };
+    
+    const ctx = this;
+    
+    convolver.generate = function(
+      d = 2,
+      fadeIn = 0.1,
+      lpFreq = 15000,
+      dimFreq = 1000,
+      irBuffer?: AudioBuffer,
+      irSpeed?: number,
+      irBegin?: number
+    ) {
+      convolver.duration = d;
+      convolver.fade = fadeIn;
+      convolver.lp = lpFreq;
+      convolver.dim = dimFreq;
+      convolver.ir = irBuffer;
+      convolver.irspeed = irSpeed;
+      convolver.irbegin = irBegin;
       
-      const ctx = this;
-      
-      convolver.generate = function(
-        d = 2,
-        fadeIn = 0.1,
-        lpFreq = 15000,
-        dimFreq = 1000,
-        irBuffer?: AudioBuffer,
-        irSpeed?: number,
-        irBegin?: number
-      ) {
-        convolver.duration = d;
-        convolver.fade = fadeIn;
-        convolver.lp = lpFreq;
-        convolver.dim = dimFreq;
-        convolver.ir = irBuffer;
-        convolver.irspeed = irSpeed;
-        convolver.irbegin = irBegin;
+      if (irBuffer) {
+        convolver.buffer = (ctx as any).adjustLength(d, irBuffer, irSpeed, irBegin);
+      } else {
+        // Generate synthetic reverb impulse response
+        // This is a simplified version - the original uses reverbGen.mjs
+        const sampleRate = ctx.sampleRate;
+        const length = Math.floor(sampleRate * d);
+        const buffer = ctx.createBuffer(2, length, sampleRate);
         
-        if (irBuffer) {
-          convolver.buffer = ctx.adjustLength(d, irBuffer, irSpeed, irBegin);
-        } else {
-          // Generate synthetic reverb impulse response
-          // This is a simplified version - the original uses reverbGen.mjs
-          const sampleRate = ctx.sampleRate;
-          const length = Math.floor(sampleRate * d);
-          const buffer = ctx.createBuffer(2, length, sampleRate);
-          
+        for (let channel = 0; channel < 2; channel++) {
+          const data = buffer.getChannelData(channel);
+          for (let i = 0; i < length; i++) {
+            // Exponential decay with random noise
+            const t = i / sampleRate;
+            const decay = Math.exp(-3 * t / d);
+            // Apply fade in
+            const fadeEnv = t < fadeIn ? t / fadeIn : 1;
+            data[i] = (Math.random() * 2 - 1) * decay * fadeEnv;
+          }
+        }
+        
+        // Apply simple lowpass filter effect by averaging nearby samples
+        // (This is a very rough approximation of the original)
+        if (lpFreq < 20000) {
           for (let channel = 0; channel < 2; channel++) {
             const data = buffer.getChannelData(channel);
-            for (let i = 0; i < length; i++) {
-              // Exponential decay with random noise
-              const t = i / sampleRate;
-              const decay = Math.exp(-3 * t / d);
-              // Apply fade in
-              const fadeEnv = t < fadeIn ? t / fadeIn : 1;
-              data[i] = (Math.random() * 2 - 1) * decay * fadeEnv;
-            }
-          }
-          
-          // Apply simple lowpass filter effect by averaging nearby samples
-          // (This is a very rough approximation of the original)
-          if (lpFreq < 20000) {
-            for (let channel = 0; channel < 2; channel++) {
-              const data = buffer.getChannelData(channel);
-              const filterStrength = Math.max(1, Math.floor(20000 / lpFreq));
-              for (let i = filterStrength; i < length; i++) {
-                let sum = 0;
-                for (let j = 0; j < filterStrength; j++) {
-                  sum += data[i - j];
-                }
-                data[i] = sum / filterStrength;
+            const filterStrength = Math.max(1, Math.floor(20000 / lpFreq));
+            for (let i = filterStrength; i < length; i++) {
+              let sum = 0;
+              for (let j = 0; j < filterStrength; j++) {
+                sum += data[i - j];
               }
+              data[i] = sum / filterStrength;
             }
           }
-          
-          convolver.buffer = buffer;
         }
-      };
-      
-      convolver.generate(duration, fade, lp, dim, ir, irspeed, irbegin);
-      return convolver;
+        
+        convolver.buffer = buffer;
+      }
     };
-    console.log('[audio-polyfill] Added AudioContext.prototype.createReverb');
-  }
+    
+    convolver.generate(duration, fade, lp, dim, ir, irspeed, irbegin);
+    return convolver;
+  };
+  addToAllPrototypes('createReverb', createReverbMethod);
+  console.log('[audio-polyfill] Added AudioContext.prototype.createReverb');
   
   // Initialize AudioWorklet polyfill for processors like shape, crush, etc.
   initWorkletPolyfill();

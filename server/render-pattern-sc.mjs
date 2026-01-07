@@ -177,12 +177,16 @@ const scScript = `
 // Auto-generated script
 
 // Server configuration
-Server.killAll;
+// Note: We kill sclang/scsynth externally before starting, so Server.killAll is not needed
+// (and can actually interfere with s.waitForBoot when there's a zombie server state)
 s.options.sampleRate = 48000;
 s.options.numOutputBusChannels = 2;
 s.options.numBuffers = 1024 * 64;
 s.options.memSize = 8192 * 16;
 s.options.maxNodes = 1024 * 8;
+
+// Explicitly boot the server before waitForBoot
+s.boot;
 
 s.waitForBoot {
     "Server booted".postln;
@@ -190,10 +194,12 @@ s.waitForBoot {
     // fork creates a Routine so we can use .wait and s.sync
     fork {
         // Start SuperDirt
+        // NOTE: We do NOT call ~dirt.loadSoundFiles to preload all samples,
+        // because that can exhaust buffer count with large sample libraries.
+        // Samples are loaded on-demand when used.
         ~dirt = SuperDirt(2, s);
-        ~dirt.loadSoundFiles;
         
-        // Load Strudel samples cache if it exists
+        // Load Strudel samples cache if it exists (these are smaller, user-specific)
         ~strudelSamplesPath = "${escapedSamplesDir}";
         if(File.exists(~strudelSamplesPath), {
             "Loading Strudel samples from: %".format(~strudelSamplesPath).postln;
@@ -250,7 +256,7 @@ if (verbose) console.log(`Created SC script: ${scScriptPath}`);
 // Start SuperCollider
 console.log('Starting SuperCollider...');
 const scProcess = spawn('sclang', [scScriptPath], {
-  stdio: 'pipe',  // Always pipe so we can detect ready
+  stdio: ['ignore', 'pipe', 'pipe'],  // Ignore stdin, pipe stdout/stderr
 });
 
 // Wait for SC to be ready by watching for "Ready for OSC" message
@@ -303,6 +309,9 @@ try {
   await readyPromise;
 } catch (e) {
   console.error(`SuperCollider failed: ${e.message}`);
+  if (verbose) {
+    console.log(`SC script kept for debugging: ${scScriptPath}`);
+  }
   scProcess.kill();
   process.exit(1);
 }
@@ -385,10 +394,14 @@ await new Promise((resolve) => {
   });
 });
 
-// Clean up temp files
-try {
-  unlinkSync(scScriptPath);
-} catch { }
+// Clean up temp files (keep for debugging if verbose)
+if (!verbose) {
+  try {
+    unlinkSync(scScriptPath);
+  } catch { }
+} else {
+  console.log(`SC script kept at: ${scScriptPath}`);
+}
 
 // Verify output file
 if (existsSync(outputPath)) {
