@@ -505,6 +505,16 @@ export class StrudelEngine {
     const ctx = getAudioContext();
     console.log(`[strudel-engine] AudioContext: ${ctx.state}, ${ctx.sampleRate}Hz`);
     
+    // Resume AudioContext if suspended (required for Node.js since superdough's
+    // initAudio() bails out early when window is undefined)
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(() => {
+        console.log('[strudel-engine] AudioContext resumed');
+      }).catch((err: Error) => {
+        console.error('[strudel-engine] Failed to resume AudioContext:', err);
+      });
+    }
+    
     // Record when the AudioContext was created for OSC timing synchronization
     // AudioContext.currentTime starts at 0, so the start time is now minus currentTime
     const audioContextStartTime = Date.now() / 1000 - ctx.currentTime;
