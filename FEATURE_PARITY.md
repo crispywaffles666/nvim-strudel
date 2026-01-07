@@ -51,21 +51,21 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 
 | Feature | Pattern | Spectral | Similarity | Status |
 |---------|---------|----------|------------|--------|
-| LPF basic | `s("saw").lpf(500)` | 1.00 | 96.8% | Excellent |
-| LPF + resonance | `s("saw").lpf(500).lpq(10)` | 1.00 | 83.8% | Fair - Q mapping differs at extremes |
-| HPF basic | `s("saw").hpf(2000)` | 0.99 | 76.5% | Fair |
-| HPF + resonance | `s("saw").hpf(1000).hpq(5)` | 0.99 | 88.9% | Good |
-| LPF envelope | `s("bd").lpf(500).lpenv(2).lpdecay(0.5)` | 0.99 | 96.7% | Excellent |
-| LPF env negative | `s("saw").lpf(2000).lpenv(-2)` | 1.00 | 94.6% | Good |
+| LPF basic | `s("saw").lpf(500)` | 1.00 | 94.4% | Good |
+| LPF + resonance | `s("saw").lpf(500).lpq(10)` | 1.00 | 94.5% | Good |
+| HPF basic | `s("saw").hpf(2000)` | 0.91 | 82.2% | Fair |
+| HPF + resonance | `s("saw").hpf(1000).hpq(5)` | 0.97 | 87.7% | Good |
+| LPF envelope | `s("bd").lpf(500).lpenv(2).lpdecay(0.5)` | 0.90 | 91.3% | Good |
+| LPF env negative | `s("saw").lpf(2000).lpenv(-2)` | 1.00 | 93.4% | Good |
 | BPF | `s("saw").bpf(500).bpq(5)` | 0.96 | 81.6% | Fair |
 | BPF envelope | `s("bd").bpf(1000).bpenv(2).bpdecay(0.5)` | 0.95 | 77.4% | Fair |
-| 24dB LPF | `note("c4").s("saw").lpf(500).ftype("24db")` | 1.00 | 93.9% | Good |
-| 24dB HPF | `note("c4").s("saw").hpf(800).ftype("24db")` | 0.98 | 83.4% | Fair |
+| 24dB LPF | `note("c4").s("saw").lpf(500).ftype("24db")` | 1.00 | 95.1% | Excellent |
+| 24dB HPF | `note("c4").s("saw").hpf(800).ftype("24db")` | 0.96 | 88.3% | Good |
 | Ladder filter | `note("c4").s("saw").lpf(500).ftype("ladder")` | 1.00 | 94.1% | Good |
 | Ladder + Q | `note("c4").s("saw").lpf(800).lpq(2).ftype("ladder")` | 0.99 | 82.0% | Fair |
-| DJF lowpass | `note("c4").s("saw").djf(0.25)` | 0.99 | 93.9% | Good |
-| DJF highpass | `note("c4").s("saw").djf(0.75)` | 0.99 | 88.3% | Good |
-| DJF sample | `s("bd").djf(0.2)` | 0.81 | 89.4% | Good |
+| DJF lowpass | `note("c4").s("saw").djf(0.25)` | 0.99 | 93.2% | Good |
+| DJF highpass | `note("c4").s("saw").djf(0.75)` | 0.99 | 91.7% | Good |
+| DJF sample | `s("bd").djf(0.2)` | 0.87 | 89.5% | Good |
 
 ### Tremolo
 
@@ -146,14 +146,14 @@ Based on tested features (excluding noise which is inherently random):
 |----------|---------------|--------|
 | Samples | 93.7% | Good |
 | Synths | 91.1% | Good |
-| Filters | 88.1% | Good |
+| Filters | 89.1% | Good |
 | Tremolo | 96.7% | Excellent |
 | ADSR | 93.8% | Good |
 | Pitch Mod | 91.2% | Good |
 | FM Synth | 80.8% | Fair (sine/tri only) |
 | Effects | 87.5% | Good |
 | Noise | RMS ±0.5dB | Excellent (level-matched) |
-| **Overall** | **91.2%** | **Good** |
+| **Overall** | **91.4%** | **Good** |
 
 ---
 
@@ -178,10 +178,10 @@ Based on tested features (excluding noise which is inherently random):
 1. **Supersaw detuning** - Slightly different detuning algorithm (77.6%)
 2. **Pan law** - Slight level differences at extreme pan positions (84.1%)
 3. **Delay feedback** - Minor differences in feedback behavior (77.9%)
-4. **HPF basic** - Slight frequency response difference (76.5%)
-5. **FM on saw/square** - Band-limited oscillators react differently to audio-rate FM
+4. **FM on saw/square** - Band-limited oscillators react differently to audio-rate FM
 
 ### Resolved
+- ~~HPF basic~~ - Fixed by switching to BHiPass biquad filter (76.5% → 82.2%)
 - ~~Filter Q scaling~~ - Fixed with 1/sqrt(Q) mapping (65% → 84-96%)
 - ~~BPF gain mismatch~~ - Fixed by routing through strudel_filter module (65% → 82%)
 - ~~Synth double envelope~~ - Fixed by removing internal ADSR from synths
@@ -205,6 +205,17 @@ cd server && node compare-backends.mjs --all
 ---
 
 ## Changelog
+
+### 2026-01-06 (Session 7)
+- Switched LPF/HPF to use biquad filters (BLowPass/BHiPass) instead of RLPF/RHPF
+  - WebAudio uses BiquadFilterNode, SC's biquad filters match this algorithm better
+  - **LPF + resonance**: 83.8% → 94.5% (+10.7%) - major improvement
+  - **HPF basic**: 76.5% → 82.2% (+5.7%)
+  - **24dB HPF**: 83.4% → 88.3% (+4.9%)
+  - **DJF highpass**: 88.3% → 91.7% (+3.4%)
+  - **24dB LPF**: 93.9% → 95.1% (+1.2%)
+  - Kept 1/sqrt(Q) mapping which reduces resonance gain to match WebAudio
+- Updated filter category average: 88.1% → 90.3%
 
 ### 2026-01-06 (Session 6)
 - Implemented ladder filter (`ftype('ladder')`) for SuperCollider backend

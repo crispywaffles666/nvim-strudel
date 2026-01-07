@@ -784,24 +784,39 @@ s.waitForBoot {
       voices = unison.clip(1, 16);
       
       // Generate detuned frequencies for each voice (with FM applied to base)
-      // Spread them evenly from -detune to +detune semitones
+      // Spread them evenly from -detune/2 to +detune/2 semitones (matching superdough)
+      // superdough's getUnisonDetune: lerp(-detune*0.5, detune*0.5, i/(voices-1))
       freqs = Array.fill(16, { |i|
-        var detuneAmount = (i - (voices - 1) / 2) / (voices.max(2) - 1) * 2;
-        (modFreq + fmMod) * (2 ** (detuneAmount * detune / 12))
+        var detuneAmount = Select.kr(voices > 1, [
+          0,
+          (i / (voices - 1) - 0.5) * detune  // -detune/2 to +detune/2
+        ]);
+        (modFreq + fmMod) * (2 ** (detuneAmount / 12))
       });
       
-      // Pan spread: voices spread from -spread to +spread
+      // Pan spread: superdough alternates L/R for odd/even voices
+      // panspread controls the amount of stereo separation
+      // Instead of linear pan positions, we use alternating L/R panning
+      // For stereo output, this is done via gain ratios, not Pan2
+      // For simplicity in SC, we approximate with linear pan but reduced spread
       pans = Array.fill(16, { |i|
-        var panPos = (i - (voices - 1) / 2) / (voices.max(2) - 1) * 2;
-        panPos * spread
+        var panPos = Select.kr(voices > 1, [
+          0,
+          (i / (voices - 1) - 0.5) * 2 * spread  // -spread to +spread
+        ]);
+        panPos
       });
       
       // Mix all voices with gain compensation
+      // superdough uses: gainAdjustment = 1/sqrt(voices), then applies 0.3 * gainAdjustment to ADSR
+      // Use LFSaw with random phase to match WebAudio's random phase initialization
+      // LFSaw is louder than band-limited Saw, so we reduce gain compensation from 2.0 to 1.0
       gainAdjust = 1 / voices.sqrt;
       sound = Mix.fill(16, { |i|
-        var sig = Saw.ar(freqs[i]) * (i < voices);  // Mute unused voices
+        var phase = Rand(0, 2);  // Random phase 0-2 (LFSaw iphase range)
+        var sig = LFSaw.ar(freqs[i], phase) * (i < voices);  // Mute unused voices
         Pan2.ar(sig, pans[i])
-      }) * gainAdjust * 2.0;  // 2.0 = RMS compensation for Saw
+      }) * gainAdjust;  // No extra gain compensation needed for LFSaw
       
       // No internal envelope - strudel_adsr module handles ADSR
       // Just free after sustain duration
@@ -970,9 +985,9 @@ s.waitForBoot {
           var hpCut = ((hpV * 11) ** 4).clip(20, 20000);
           
           // Apply LPF, HPF, or pass through based on djf value
-          // Using simple RLPF/RHPF with fixed moderate Q
-          var filteredLp = RLPF.ar(signal, lpCut, 0.7);
-          var filteredHp = RHPF.ar(signal, hpCut, 0.7);
+          // Using BLowPass/BHiPass (biquad) to match WebAudio's BiquadFilterNode
+          var filteredLp = BLowPass.ar(signal, lpCut, 0.7);
+          var filteredHp = BHiPass.ar(signal, hpCut, 0.7);
           
           Select.ar(isLowpass, [
             Select.ar(isHighpass, [signal, filteredHp]),
@@ -981,11 +996,11 @@ s.waitForBoot {
         }.value
       ]);
       
-      // Convert Q to rq for SuperCollider's RLPF/RHPF/BPF
-      // WebAudio BiquadFilter uses Q directly, SC uses rq = 1/Q
-      // However, the resonance gain differs between implementations.
-      // Using 1/sqrt(Q) instead of 1/Q reduces SC's resonance to match WebAudio better.
-      // Empirically tested: 1/Q gives +4-6dB difference at high Q, 1/sqrt(Q) is closer.
+      // Convert Q to rq for SuperCollider's biquad filters (BLowPass/BHiPass/BPF)
+      // WebAudio BiquadFilter uses Q directly, SC biquad filters use rq = 1/Q
+      // Using BLowPass/BHiPass (Butterworth biquad) instead of RLPF/RHPF for
+      // better parity with WebAudio's BiquadFilterNode algorithm.
+      // The 1/sqrt(Q) mapping reduces the resonance gain to better match WebAudio.
       rqLpf = (1/strudelLpq.max(0.001).sqrt).clip(0.01, 2);
       rqHpf = (1/strudelHpq.max(0.001).sqrt).clip(0.01, 2);
       rqBpf = (1/strudelBpq.max(0.001).sqrt).clip(0.01, 2);
@@ -1063,19 +1078,21 @@ s.waitForBoot {
       ladderFiltered = ladderFiltered.tanh;
       
       // Standard filter mode (12dB or 24dB biquad)
-      standardFiltered = RLPF.ar(signal, lpfEnvFreq, rqLpf);
+      // Using BLowPass (Butterworth biquad) to match WebAudio's BiquadFilterNode
+      standardFiltered = BLowPass.ar(signal, lpfEnvFreq, rqLpf);
       standardFiltered = Select.ar(strudelFtype > 0, [
         standardFiltered,
-        RLPF.ar(standardFiltered, lpfEnvFreq, rqLpf)  // Second pass for 24dB slope
+        BLowPass.ar(standardFiltered, lpfEnvFreq, rqLpf)  // Second pass for 24dB slope
       ]);
       
       // Select between ladder and standard filter based on strudelFtype
       signal = Select.ar((strudelFtype >= 2).asInteger, [standardFiltered, ladderFiltered]);
       
-      signal = RHPF.ar(signal, hpfEnvFreq, rqHpf);
+      // Using BHiPass (Butterworth biquad) instead of RHPF for better WebAudio parity
+      signal = BHiPass.ar(signal, hpfEnvFreq, rqHpf);
       signal = Select.ar((strudelFtype == 1).asInteger, [
         signal,
-        RHPF.ar(signal, hpfEnvFreq, rqHpf)  // Second pass for 24dB slope (only in 24db mode, not ladder)
+        BHiPass.ar(signal, hpfEnvFreq, rqHpf)  // Second pass for 24dB slope (only in 24db mode, not ladder)
       ]);
       
       // BPF only applied when strudelBpf > 0 (default is 0 = disabled)

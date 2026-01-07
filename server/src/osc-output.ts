@@ -335,6 +335,24 @@ function hapToOscArgs(hap: any, cps: number): any[] {
   // Strudel uses: phaserrate, phaserdepth
   // SuperDirt uses the same names, so no translation needed
   
+  // Handle delay wet/send level mapping
+  // SuperDirt's CombL delay reads the full dry signal and multiplies output by delayAmp
+  // WebAudio sends signal*delay to the delay, so the wet level is pre-applied
+  // The CombL approach causes more energy accumulation with feedback
+  // Empirically, SC's delay output is about 12dB louder, so we reduce the send
+  if (controls.delay != null) {
+    controls.delay = controls.delay * 0.25;  // -12dB adjustment to match WebAudio
+  }
+  
+  // Handle delay feedback mapping
+  // SuperDirt's CombL uses decay time: decayTime = log2(-60dB) / log2(feedback) * delayTime
+  // This accumulates more energy than WebAudio's simple feedback multiplier
+  // Empirical adjustment: feedback^2.0 reduces SC's buildup to match WebAudio
+  if (controls.delayfeedback != null) {
+    const feedback = Math.min(Math.abs(controls.delayfeedback), 0.995);
+    controls.delayfeedback = Math.pow(feedback, 2.0);
+  }
+  
 
   
   // Handle synth sounds (oscillators)
