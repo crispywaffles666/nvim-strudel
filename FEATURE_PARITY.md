@@ -2,7 +2,7 @@
 
 This document tracks feature parity between the WebAudio backend (superdough) and our SuperDirt/OSC backend.
 
-**Last Updated:** 2026-01-06
+**Last Updated:** 2026-01-06 (Session 8)
 
 ## Similarity Score Legend
 
@@ -35,7 +35,7 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Square | `note("c4").s("square")` | 1.00 | 93.3% | Good |
 | Triangle | `note("c4").s("triangle")` | 1.00 | 96.7% | Excellent |
 | Pulse | `note("c4").s("pulse")` | 0.83 | 88.2% | Good |
-| Supersaw | `note("c3").s("supersaw")` | 0.85 | 77.6% | Fair - detuning differs |
+| Supersaw | `note("c3").s("supersaw")` | 0.85 | ~78% avg | Fair - random phase variance |
 
 ### Noise Generators
 
@@ -111,11 +111,11 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 
 | Feature | Pattern | Spectral | Similarity | Status |
 |---------|---------|----------|------------|--------|
-| Pan | `s("bd").pan(0.5)` | 0.96 | 84.1% | Fair |
+| Pan | `s("bd").pan(0.5)` | 0.96 | 93.5% | Good |
 | Shape (distortion) | `s("bd").shape(0.5)` | 0.96 | 94.6% | Good |
 | Crush (bitcrush) | `s("bd").crush(4)` | 0.99 | 98.2% | Excellent |
 | Coarse | `s("bd").coarse(8)` | 0.95 | 93.4% | Good |
-| Delay | `s("bd").delay(0.5)` | 0.94 | 77.9% | Fair |
+| Delay | `s("bd").delay(0.5)` | 0.88 | 89.0% | Good |
 | Reverb | `s("bd").room(0.5)` | 0.98 | 84.2% | Fair |
 | Reverb + size | `s("bd").room(0.8).roomsize(4)` | 0.91 | 80.8% | Fair |
 | Phaser | `note("c4").s("saw").phaserrate(2).phaserdepth(0.5)` | 0.91 | 86.7% | Good |
@@ -151,9 +151,9 @@ Based on tested features (excluding noise which is inherently random):
 | ADSR | 93.8% | Good |
 | Pitch Mod | 91.2% | Good |
 | FM Synth | 80.8% | Fair (sine/tri only) |
-| Effects | 87.5% | Good |
+| Effects | 90.1% | Good |
 | Noise | RMS ±0.5dB | Excellent (level-matched) |
-| **Overall** | **91.4%** | **Good** |
+| **Overall** | **91.8%** | **Good** |
 
 ---
 
@@ -175,10 +175,8 @@ Based on tested features (excluding noise which is inherently random):
 ## Known Issues
 
 ### Minor
-1. **Supersaw detuning** - Slightly different detuning algorithm (77.6%)
-2. **Pan law** - Slight level differences at extreme pan positions (84.1%)
-3. **Delay feedback** - Minor differences in feedback behavior (77.9%)
-4. **FM on saw/square** - Band-limited oscillators react differently to audio-rate FM
+1. **Supersaw random phases** - Similarity varies 73-83% due to random initial phases (inherent limitation)
+2. **FM on saw/square** - Band-limited oscillators react differently to audio-rate FM
 
 ### Resolved
 - ~~HPF basic~~ - Fixed by switching to BHiPass biquad filter (76.5% → 82.2%)
@@ -186,6 +184,9 @@ Based on tested features (excluding noise which is inherently random):
 - ~~BPF gain mismatch~~ - Fixed by routing through strudel_filter module (65% → 82%)
 - ~~Synth double envelope~~ - Fixed by removing internal ADSR from synths
 - ~~Noise "broken"~~ - Not broken, just random - RMS levels match within 1dB
+- ~~Pan law~~ - Now 92-94% at all positions (was 84.1%)
+- ~~Delay feedback~~ - Now 88-90% with feedback mapping adjustments (was 77.9%)
+- ~~Supersaw defaults~~ - Fixed detune/spread defaults and panning algorithm
 
 ---
 
@@ -205,6 +206,18 @@ cd server && node compare-backends.mjs --all
 ---
 
 ## Changelog
+
+### 2026-01-06 (Session 8)
+- Improved supersaw synth panning and defaults
+  - Changed default detune from 0.18 to 0.2 (matches WebAudio freqspread)
+  - Changed default spread from 0.6 to 0.4 (matches WebAudio panspread)
+  - Switched from linear pan spread to alternating L/R pattern (odd=left, even=right)
+  - Note: Similarity varies 73-83% due to random phase initialization in both backends
+- Verified delay and pan improvements from previous session
+  - **Delay**: 77.9% → 89.0% (+11.1%) - feedback mapping working well
+  - **Pan**: 84.1% → 93.5% (+9.4%) - now consistent across all positions
+- Updated Effects category average: 87.5% → 90.1%
+- Updated Overall score: 91.4% → 91.8%
 
 ### 2026-01-06 (Session 7)
 - Switched LPF/HPF to use biquad filters (BLowPass/BHiPass) instead of RLPF/RHPF
