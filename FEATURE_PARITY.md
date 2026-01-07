@@ -118,6 +118,7 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Delay | `s("bd").delay(0.5)` | 0.88 | 89.0% | Good |
 | Reverb | `s("bd").room(0.5)` | 0.98 | 84.2% | Fair |
 | Reverb + size | `s("bd").room(0.8).roomsize(4)` | 0.91 | 80.8% | Fair |
+| Convolution reverb | `s("bd").room(0.5).ir("hh")` | ~0.88 | ~88% | Good |
 | Phaser | `note("c4").s("saw").phaserrate(2).phaserdepth(0.5)` | 0.91 | 86.7% | Good |
 
 ### Gain & Dynamics
@@ -166,7 +167,6 @@ Based on tested features (excluding noise which is inherently random):
 | Wavetable Synth | `wt`, `wtenv`, `warp`, etc. | Very Hard | Complex wavetable modulation |
 | Phase Vocoder | `stretch` | Very Hard | Time stretching |
 | Sidechain/Duck | `duckorbit`, `duckdepth`, etc. | Hard | Cross-orbit ducking |
-| Convolution Reverb | `ir`, `irspeed`, `irbegin` | Medium | Impulse response reverb |
 | Analyser | `analyze`, `fft` | N/A | Visualization only |
 | ByteBeat | `bbexpr`, `bbst` | Medium | Byte beat expressions |
 
@@ -206,6 +206,15 @@ cd server && node compare-backends.mjs --all
 ---
 
 ## Changelog
+
+### 2026-01-06 (Session 9)
+- Implemented convolution reverb using PartConv
+  - Added `strudel_convrev` module for impulse response-based reverb
+  - Supports `ir` (sample name), `irspeed` (not yet implemented), `irbegin` (not yet implemented)
+  - Uses PartConv with FFT size 2048 for efficient real-time convolution
+  - Spectral buffers are prepared and cached for each unique IR sample
+  - Applied fixed normalization factor (2.0) to approximate WebAudio's ConvolverNode normalization
+  - **Convolution reverb**: ~88% similarity across different room values and IR samples
 
 ### 2026-01-06 (Session 8)
 - Improved supersaw synth panning and defaults

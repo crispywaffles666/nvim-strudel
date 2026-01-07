@@ -353,6 +353,25 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     controls.delayfeedback = Math.pow(feedback, 2.0);
   }
   
+  // Handle convolution reverb (ir parameter)
+  // When ir is specified, we use our strudel_convrev module instead of SuperDirt's dirt_reverb
+  // ir: sample name to use as impulse response
+  // irspeed: playback speed of IR (default 1)
+  // irbegin: start offset into IR (0-1, default 0)
+  if (controls.ir != null) {
+    controls.strudelIR = controls.ir;
+    delete controls.ir;
+    
+    if (controls.irspeed != null) {
+      controls.strudelIRSpeed = controls.irspeed;
+      delete controls.irspeed;
+    }
+    
+    if (controls.irbegin != null) {
+      controls.strudelIRBegin = controls.irbegin;
+      delete controls.irbegin;
+    }
+  }
 
   
   // Handle synth sounds (oscillators)
