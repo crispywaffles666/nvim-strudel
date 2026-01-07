@@ -37,6 +37,20 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Pulse | `note("c4").s("pulse")` | 0.83 | 88.2% | Good |
 | Supersaw | `note("c3").s("supersaw")` | 0.85 | ~78% avg | Fair - random phase variance |
 
+### ByteBeat
+
+| Feature | Pattern | Spectral | Similarity | Status |
+|---------|---------|----------|------------|--------|
+| Preset 0 (comparison) | `s("bytebeat:0")` | 0.84 | 91.1% | Good |
+| Preset 2 (sawtooth) | `s("bytebeat:2")` | 0.99 | 95.3% | Excellent |
+| Preset 3 (XOR cascade) | `s("bytebeat:3")` | 0.01 | 49.1% | Poor - bitwise XOR |
+| Preset 4 (square) | `s("bytebeat:4")` | 1.00 | 98.2% | Excellent |
+| Preset 5 (AND cascade) | `s("bytebeat:5")` | 0.18 | 46.1% | Poor - bitwise AND/shift |
+| Preset 6 (multi-mod) | `s("bytebeat:6")` | 0.97 | 93.5% | Good |
+| Preset 9 (sine) | `s("bytebeat:9")` | 1.00 | 97.7% | Excellent |
+
+*Note: ByteBeat presets that use bitwise XOR (`^`) or complex AND (`&`) operations have low similarity because SuperCollider cannot perform audio-rate bitwise operations. Presets using modulo, comparison, and trigonometric functions work well. Custom expressions (`bbexpr`) are WebAudio-only.*
+
 ### Noise Generators
 
 | Feature | Pattern | Slope WA | Slope SC | Slope Diff | Status |
@@ -168,7 +182,6 @@ Based on tested features (excluding noise which is inherently random):
 | Phase Vocoder | `stretch` | Very Hard | Time stretching |
 | Sidechain/Duck | `duckorbit`, `duckdepth`, etc. | Hard | Cross-orbit ducking |
 | Analyser | `analyze`, `fft` | N/A | Visualization only |
-| ByteBeat | `bbexpr`, `bbst` | Medium | Byte beat expressions |
 
 ---
 
@@ -177,6 +190,7 @@ Based on tested features (excluding noise which is inherently random):
 ### Minor
 1. **Supersaw random phases** - Similarity varies 73-83% due to random initial phases (inherent limitation)
 2. **FM on saw/square** - Band-limited oscillators react differently to audio-rate FM
+3. **ByteBeat bitwise presets** - Presets 3, 5, 8, 10-14 use bitwise XOR/AND which SC cannot do at audio rate - similarity ~50%
 
 ### Resolved
 - ~~HPF basic~~ - Fixed by switching to BHiPass biquad filter (76.5% → 82.2%)
@@ -206,6 +220,15 @@ cd server && node compare-backends.mjs --all
 ---
 
 ## Changelog
+
+### 2026-01-06 (Session 10)
+- Implemented ByteBeat synthesizer for both backends
+  - Added `strudel_bytebeat` SynthDef to SuperCollider with all 15 presets
+  - Added `ByteBeatProcessor` worklet for Node.js WebAudio polyfill
+  - Uses `bbPreset` (via `n` control) to select preset, `bbStartTime` for offset
+  - **Presets 0, 2, 4, 6, 9**: 91-98% similarity - use modulo/comparison (Excellent)
+  - **Presets 3, 5, 8, 10-14**: ~50% similarity - bitwise ops can't match in SC (Expected)
+  - Custom expressions (`bbexpr`) are WebAudio-only (SC can't eval JS at runtime)
 
 ### 2026-01-06 (Session 9)
 - Implemented convolution reverb using PartConv

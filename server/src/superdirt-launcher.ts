@@ -684,6 +684,100 @@ s.waitForBoot {
     "*** Strudel ZZFX SynthDef loaded ***".postln;
     
     // ========================================
+    // ByteBeat Synth - 8-bit style procedural audio
+    // Implements the 15 built-in presets from superdough
+    // Custom expressions (bbexpr) require WebAudio fallback
+    // ========================================
+    
+    SynthDef(\\strudel_bytebeat, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
+                                   bbPreset = 0, bbStartTime = 0|
+      var sound, t, tIncr, sampleRate, pi2;
+      var preset0, preset1, preset2, preset3, preset4, preset5, preset6, preset7;
+      var preset8, preset9, preset10, preset11, preset12, preset13, preset14;
+      var presetIdx, rawValue;
+      
+      pi2 = 2pi;
+      sampleRate = SampleRate.ir;
+      
+      // t increments at: (sampleRate / 256) * freq samples per second
+      // This matches superdough's: local_t = (t / (sampleRate / 256)) * freq + initialOffset
+      // Since we're in SC, we use Phasor to generate continuous t
+      tIncr = freq / (sampleRate / 256);
+      t = Phasor.ar(0, tIncr, 0, 1e12, bbStartTime);
+      
+      // Pre-compute all 15 presets (matching superdough/synth.mjs lines 219-235)
+      // Formula: funcValue = preset(t); signal = (funcValue & 255) / 127.5 - 1
+      // SC doesn't have bitwise AND for audio rate, so we use mod(256)
+      // and round to simulate integer truncation
+      
+      // Preset 0: '(t%255 >= t/255%255)*255'
+      preset0 = ((t % 255) >= ((t / 255) % 255)) * 255;
+      
+      // Preset 1: '(t*(t*8%60 <= 300)|(-t)*(t*4%512 < 256))+t/400'
+      // Complex bitwise OR - approximate with addition
+      preset1 = (t * ((t * 8 % 60) <= 300)) + (t.neg * ((t * 4 % 512) < 256)) + (t / 400);
+      
+      // Preset 2: 't' - simple sawtooth
+      preset2 = t;
+      
+      // Preset 3: 't*(t >> 10^t)' - classic bytebeat
+      // >> is integer right shift, ^ is XOR - approximate with division and mod
+      preset3 = t * (((t / 1024).floor % 256) * t % 256);
+      
+      // Preset 4: 't&128' - square wave at 128 boundary
+      preset4 = (t % 256) >= 128 * 128;
+      
+      // Preset 5: 't&t>>8' - classic cascade
+      preset5 = (t % 256) * ((t / 256).floor % 256) % 256;
+      
+      // Preset 6: '((t%255+t%128+t%64+t%32+t%16+t%127.8+t%64.8+t%32.8+t%16.8)/3)'
+      preset6 = ((t % 255) + (t % 128) + (t % 64) + (t % 32) + (t % 16) + 
+                 (t % 127.8) + (t % 64.8) + (t % 32.8) + (t % 16.8)) / 3;
+      
+      // Preset 7: '((t%64+t%63.8+t%64.15+t%64.35+t%63.5)/1.25)'
+      preset7 = ((t % 64) + (t % 63.8) + (t % 64.15) + (t % 64.35) + (t % 63.5)) / 1.25;
+      
+      // Preset 8: '(t&(t>>7)-t)' - difference pattern
+      preset8 = ((t % 256) * ((t / 128).floor % 256) - t) % 256;
+      
+      // Preset 9: '(sin(t*PI/128)*127+127)' - sine wave
+      preset9 = (sin(t * pi / 128) * 127) + 127;
+      
+      // Preset 10: '((t^t/2+t+64*(sin((t*PI/64)+(t*PI/32768))+64))%128*2)'
+      preset10 = (((t % 256) * ((t / 2).floor % 256) + t + 64 * (sin((t * pi / 64) + (t * pi / 32768)) + 64)) % 128) * 2;
+      
+      // Preset 11: '((t^t/2+t+64*(cos >> 0))%127.85*2)' - note: 'cos >> 0' is malformed, using cos(t)
+      preset11 = (((t % 256) * ((t / 2).floor % 256) + t + 64 * cos(t).floor) % 127.85) * 2;
+      
+      // Preset 12: '((t^t/2+t+64)%128*2)'
+      preset12 = (((t % 256) * ((t / 2).floor % 256) + t + 64) % 128) * 2;
+      
+      // Preset 13: '(((t * .25)^(t * .25)/100+(t * .25))%128)*2'
+      preset13 = ((((t * 0.25) % 256) * (((t * 0.25) / 100).floor % 256) + (t * 0.25)) % 128) * 2;
+      
+      // Preset 14: '((t^t/2+t+64)%7 * 24)'
+      preset14 = (((t % 256) * ((t / 2).floor % 256) + t + 64) % 7) * 24;
+      
+      // Select preset using index
+      presetIdx = bbPreset.clip(0, 14);
+      rawValue = SelectX.ar(presetIdx, [
+        preset0, preset1, preset2, preset3, preset4, preset5, preset6, preset7,
+        preset8, preset9, preset10, preset11, preset12, preset13, preset14
+      ]);
+      
+      // Convert to audio: (value & 255) / 127.5 - 1
+      // Use mod 256 instead of bitwise AND
+      sound = (rawValue % 256) / 127.5 - 1;
+      
+      // Apply gain of 0.2 and clip to [-0.4, 0.4] (matches superdough)
+      sound = (sound * 0.2).clip(-0.4, 0.4);
+      
+      Line.kr(0, 0, sustain, doneAction: 2);
+      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
+    }).add;
+    "Added: strudel_bytebeat".postln;
+    
+    // ========================================
     // Pulse Wave Synth with PWM (pulse width modulation)
     // Matches superdough's pulse synth with pw, pwrate, pwsweep params
     // NO internal envelope - the strudel_adsr module applies ADSR to all sounds

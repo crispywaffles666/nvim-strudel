@@ -743,6 +743,191 @@ class PulseOscillatorProcessor extends AudioWorkletProcessor {
 }
 
 // ============================================================================
+// ByteBeat Processor - 8-bit procedural audio generator
+// Uses predefined preset expressions instead of dynamic eval
+// Matches the 15 built-in presets from superdough/synth.mjs
+// ============================================================================
+
+// ByteBeat helper functions (chyx object from superdough)
+const chyx = {
+  bitC: function (x, y, z) {
+    return x & y ? z : 0;
+  },
+  br: function (x, size = 8) {
+    if (size > 32) {
+      throw new Error('br() Size cannot be greater than 32');
+    }
+    let result = 0;
+    for (let idx = 0; idx < size; idx++) {
+      result += chyx.bitC(x, 2 ** idx, 2 ** (size - (idx + 1)));
+    }
+    return result;
+  },
+  sinf: function (x) {
+    return Math.sin(x / (128 / Math.PI));
+  },
+  cosf: function (x) {
+    return Math.cos(x / (128 / Math.PI));
+  },
+  tanf: function (x) {
+    return Math.tan(x / (128 / Math.PI));
+  },
+  regG: function (t, X) {
+    return X.test(t.toString(2));
+  },
+};
+
+// The 15 built-in preset expressions from superdough/synth.mjs
+const byteBeatPresets = [
+  // 0: '(t%255 >= t/255%255)*255'
+  (t) => ((t % 255) >= ((t / 255) % 255)) * 255,
+  // 1: '(t*(t*8%60 <= 300)|(-t)*(t*4%512 < 256))+t/400'
+  (t) => (t * ((t * 8 % 60) <= 300) | (-t) * ((t * 4 % 512) < 256)) + t / 400,
+  // 2: 't' - sawtooth
+  (t) => t,
+  // 3: 't*(t >> 10^t)'
+  (t) => t * ((t >> 10) ^ t),
+  // 4: 't&128' - square wave
+  (t) => t & 128,
+  // 5: 't&t>>8' - classic bytebeat
+  (t) => t & (t >> 8),
+  // 6: '((t%255+t%128+t%64+t%32+t%16+t%127.8+t%64.8+t%32.8+t%16.8)/3)'
+  (t) => ((t % 255) + (t % 128) + (t % 64) + (t % 32) + (t % 16) + (t % 127.8) + (t % 64.8) + (t % 32.8) + (t % 16.8)) / 3,
+  // 7: '((t%64+t%63.8+t%64.15+t%64.35+t%63.5)/1.25)'
+  (t) => ((t % 64) + (t % 63.8) + (t % 64.15) + (t % 64.35) + (t % 63.5)) / 1.25,
+  // 8: '(t&(t>>7)-t)'
+  (t) => t & ((t >> 7) - t),
+  // 9: '(sin(t*PI/128)*127+127)' - sine wave
+  (t) => Math.sin(t * Math.PI / 128) * 127 + 127,
+  // 10: '((t^t/2+t+64*(sin((t*PI/64)+(t*PI/32768))+64))%128*2)'
+  (t) => ((t ^ Math.floor(t / 2) + t + 64 * (Math.sin((t * Math.PI / 64) + (t * Math.PI / 32768)) + 64)) % 128) * 2,
+  // 11: '((t^t/2+t+64*(cos >> 0))%127.85*2)' - using cos(t) since 'cos >> 0' is malformed
+  (t) => ((t ^ Math.floor(t / 2) + t + 64 * Math.floor(Math.cos(t))) % 127.85) * 2,
+  // 12: '((t^t/2+t+64)%128*2)'
+  (t) => ((t ^ Math.floor(t / 2) + t + 64) % 128) * 2,
+  // 13: '(((t * .25)^(t * .25)/100+(t * .25))%128)*2'
+  (t) => (((t * 0.25) ^ Math.floor((t * 0.25) / 100) + (t * 0.25)) % 128) * 2,
+  // 14: '((t^t/2+t+64)%7 * 24)'
+  (t) => ((t ^ Math.floor(t / 2) + t + 64) % 7) * 24,
+];
+
+// Create shortened Math functions for custom expressions
+let mathParams, byteBeatHelperFuncs;
+function getByteBeatFunc(codetext) {
+  if ((mathParams || byteBeatHelperFuncs) == null) {
+    mathParams = Object.getOwnPropertyNames(Math);
+    byteBeatHelperFuncs = mathParams.map((k) => Math[k]);
+    const chyxNames = Object.getOwnPropertyNames(chyx);
+    const chyxFuncs = chyxNames.map((k) => chyx[k]);
+    mathParams.push('int', 'window', ...chyxNames);
+    byteBeatHelperFuncs.push(Math.floor, globalThis, ...chyxFuncs);
+  }
+  return new Function(...mathParams, 't', `return 0,\n${codetext || 0};`).bind(globalThis, ...byteBeatHelperFuncs);
+}
+
+class ByteBeatProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.t = null;
+    this.initialOffset = 0;
+    this.func = null;
+    this.preset = 0;
+    
+    // Handle messages from the main thread
+    this.port.onmessage = (event) => {
+      const { codeText, byteBeatStartTime, preset } = event.data;
+      
+      if (byteBeatStartTime != null) {
+        this.t = 0;
+        this.initialOffset = Math.floor(byteBeatStartTime);
+      }
+      
+      if (preset != null) {
+        this.preset = Math.floor(Math.abs(preset)) % byteBeatPresets.length;
+        this.func = byteBeatPresets[this.preset];
+      } else if (codeText) {
+        // For custom expressions, compile the code
+        try {
+          this.func = getByteBeatFunc(codeText.trim());
+        } catch (e) {
+          console.warn('[ByteBeat] Failed to compile expression:', e);
+          this.func = byteBeatPresets[0];
+        }
+      } else {
+        this.func = byteBeatPresets[0];
+      }
+    };
+  }
+
+  static get parameterDescriptors() {
+    return [
+      { name: 'begin', defaultValue: 0 },
+      { name: 'end', defaultValue: 0 },
+      { name: 'frequency', defaultValue: 440 },
+      { name: 'detune', defaultValue: 0 },
+    ];
+  }
+
+  process(inputs, outputs, params) {
+    if (this.disconnected) {
+      return false;
+    }
+    
+    const beginParam = params.begin;
+    const endParam = params.end;
+    
+    if (!beginParam || !endParam) return true;
+    
+    if (currentTime <= beginParam[0]) {
+      return true;
+    }
+    if (currentTime >= endParam[0]) {
+      return false;
+    }
+    
+    if (this.t == null) {
+      this.t = beginParam[0] * sampleRate;
+    }
+    
+    // Use preset if no custom function
+    if (!this.func) {
+      this.func = byteBeatPresets[this.preset];
+    }
+    
+    const output = outputs[0];
+    if (!output || !output[0]) return true;
+    
+    for (let i = 0; i < output[0].length; i++) {
+      const detune = params.detune ? (params.detune[i] ?? params.detune[0] ?? 0) : 0;
+      const freqVal = params.frequency ? (params.frequency[i] ?? params.frequency[0] ?? 440) : 440;
+      const freq = applySemitoneDetuneToFrequency(freqVal, detune / 100);
+      
+      // Calculate local_t matching superdough's formula
+      let local_t = (this.t / (sampleRate / 256)) * freq + this.initialOffset;
+      
+      // Evaluate the bytebeat function
+      const funcValue = this.func(local_t);
+      
+      // Convert to audio: (value & 255) / 127.5 - 1
+      let signal = ((funcValue | 0) & 255) / 127.5 - 1;
+      
+      // Apply gain of 0.2 and clip to [-0.4, 0.4]
+      const out = clamp(signal * 0.2, -0.4, 0.4);
+      
+      for (let c = 0; c < output.length; c++) {
+        if (output[c]) {
+          output[c][i] = out;
+        }
+      }
+      
+      this.t = this.t + 1;
+    }
+    
+    return true;
+  }
+}
+
+// ============================================================================
 // Register all processors
 // ============================================================================
 registerProcessor('shape-processor', ShapeProcessor);
@@ -754,6 +939,7 @@ registerProcessor('distort-processor', DistortProcessor);
 registerProcessor('lfo-processor', LFOProcessor);
 registerProcessor('supersaw-oscillator', SuperSawOscillatorProcessor);
 registerProcessor('pulse-oscillator', PulseOscillatorProcessor);
+registerProcessor('byte-beat-processor', ByteBeatProcessor);
 
 // Log registration
-console.log('[worklets-node] Registered processors: shape, coarse, crush, djf, ladder, distort, lfo, supersaw-oscillator, pulse-oscillator');
+console.log('[worklets-node] Registered processors: shape, coarse, crush, djf, ladder, distort, lfo, supersaw-oscillator, pulse-oscillator, byte-beat-processor');

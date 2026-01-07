@@ -122,7 +122,9 @@ const oscSynthSounds = new Set([
   'sine', 'sawtooth', 'saw', 'square', 'triangle', 'tri',
   'white', 'pink', 'brown',
   // ZZFX chip sounds
-  'zzfx', 'z_sine', 'z_sawtooth', 'z_triangle', 'z_square', 'z_tan', 'z_noise'
+  'zzfx', 'z_sine', 'z_sawtooth', 'z_triangle', 'z_square', 'z_tan', 'z_noise',
+  // ByteBeat
+  'bytebeat'
 ]);
 
 /**
@@ -402,6 +404,8 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     'z_square': 'strudel_zzfx',
     'z_tan': 'strudel_zzfx',
     'z_noise': 'strudel_zzfx',
+    // ByteBeat - 8-bit procedural audio with 15 built-in presets
+    'bytebeat': 'strudel_bytebeat',
   };
   
   // ZZFX shape mapping: sound name -> zshape value (0-4)
@@ -488,6 +492,39 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       // ZZFX has 0.25 volume baked into the SynthDef, so DON'T apply the 0.3 multiplier
       // that regular synths use. Just use the raw pattern gain.
       // (The 0.25 is roughly equivalent to the 0.3 in other synths)
+      controls.gain = controls.gain ?? 0.8;
+    } else if (synthInstrument === 'strudel_bytebeat') {
+      // ByteBeat - 8-bit procedural audio generator
+      // Uses 15 built-in preset expressions from superdough
+      // Custom bbexpr requires WebAudio fallback (not supported in SC)
+      
+      // If bbexpr is specified, we can't handle it in SC - log warning
+      if (controls.bbexpr !== undefined) {
+        console.warn('[osc] ByteBeat custom expressions (bbexpr) not supported in SuperCollider backend. Use a preset number instead.');
+        // Fall through anyway, will use default preset
+        delete controls.bbexpr;
+      }
+      
+      // Handle preset selection:
+      // s("bytebeat:N") where N is the preset number (0-14)
+      // The 'n' control specifies which preset to use
+      const presetNum = controls.n ?? 0;
+      controls.bbPreset = Math.floor(Math.abs(presetNum)) % 15;
+      
+      // Handle byteBeatStartTime (bbst) - start offset in samples
+      if (controls.bbst !== undefined) {
+        controls.bbStartTime = controls.bbst;
+        delete controls.bbst;
+      }
+      
+      // ByteBeat uses 440 Hz as default frequency (like superdough)
+      // The frequency controls the t increment rate
+      if (controls.freq === undefined && controls.note === undefined) {
+        controls.freq = 440;
+      }
+      
+      // ByteBeat has its own gain (0.2) baked into the SynthDef
+      // like ZZFX, don't apply the 0.3 multiplier
       controls.gain = controls.gain ?? 0.8;
     } else if (synthInstrument === 'strudel_pulse') {
       // Pulse wave synth with PWM (pulse width modulation)
