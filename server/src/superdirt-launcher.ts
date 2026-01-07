@@ -745,7 +745,7 @@ s.waitForBoot {
     // ========================================
     
     SynthDef(\\strudel_supersaw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   unison = 5, spread = 0.6, detune = 0.18, vib = 0, vibmod = 0.5,
+                                   unison = 5, spread = 0.4, detune = 0.2, vib = 0, vibmod = 0.5,
                                    penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
                                    fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
       var sound, voices, freqs, pans, gainAdjust, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
@@ -794,29 +794,30 @@ s.waitForBoot {
         (modFreq + fmMod) * (2 ** (detuneAmount / 12))
       });
       
-      // Pan spread: superdough alternates L/R for odd/even voices
-      // panspread controls the amount of stereo separation
-      // Instead of linear pan positions, we use alternating L/R panning
-      // For stereo output, this is done via gain ratios, not Pan2
-      // For simplicity in SC, we approximate with linear pan but reduced spread
+      // Pan spread: superdough alternates L/R for odd/even voices using sqrt-based panning
+      // panspread (0-1) controls the amount of stereo separation
+      // WebAudio: panspread_scaled = panspread * 0.5 + 0.5 (maps 0.4 default to 0.7)
+      // gain1 = sqrt(1 - panspread_scaled), gain2 = sqrt(panspread_scaled)
+      // odd voices: L=gain2, R=gain1 (pan left)
+      // even voices: L=gain1, R=gain2 (pan right)
+      // In SC, we approximate this with alternating pan positions
       pans = Array.fill(16, { |i|
-        var panPos = Select.kr(voices > 1, [
-          0,
-          (i / (voices - 1) - 0.5) * 2 * spread  // -spread to +spread
-        ]);
-        panPos
+        var isOdd = (i % 2);  // 0 or 1
+        // Map spread to pan amount: spread=0.4 -> panAmt ~= 0.4 (moderate stereo)
+        // Odd voices pan left (negative), even voices pan right (positive)
+        var panAmt = Select.kr(voices > 1, [0, spread]);
+        Select.kr(isOdd, [panAmt, panAmt.neg])  // Even=right, Odd=left
       });
       
       // Mix all voices with gain compensation
       // superdough uses: gainAdjustment = 1/sqrt(voices), then applies 0.3 * gainAdjustment to ADSR
-      // Use LFSaw with random phase to match WebAudio's random phase initialization
-      // LFSaw is louder than band-limited Saw, so we reduce gain compensation from 2.0 to 1.0
+      // Use LFSaw (non-band-limited) for similar loudness to WebAudio's polyBLEP
       gainAdjust = 1 / voices.sqrt;
       sound = Mix.fill(16, { |i|
         var phase = Rand(0, 2);  // Random phase 0-2 (LFSaw iphase range)
         var sig = LFSaw.ar(freqs[i], phase) * (i < voices);  // Mute unused voices
         Pan2.ar(sig, pans[i])
-      }) * gainAdjust;  // No extra gain compensation needed for LFSaw
+      }) * gainAdjust;
       
       // No internal envelope - strudel_adsr module handles ADSR
       // Just free after sustain duration
