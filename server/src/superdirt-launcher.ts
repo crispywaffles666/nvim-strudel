@@ -997,14 +997,13 @@ s.waitForBoot {
         }.value
       ]);
       
-      // Convert Q to rq for SuperCollider's biquad filters (BLowPass/BHiPass/BPF)
-      // WebAudio BiquadFilter uses Q directly, SC biquad filters use rq = 1/Q
-      // Using BLowPass/BHiPass (Butterworth biquad) instead of RLPF/RHPF for
-      // better parity with WebAudio's BiquadFilterNode algorithm.
-      // The 1/sqrt(Q) mapping reduces the resonance gain to better match WebAudio.
+      // Convert Q to rq for SuperCollider filters
+      // WebAudio BiquadFilter uses Q directly, SC filters use rq = 1/Q
+      // For LPF/HPF using BLowPass/BHiPass: 1/sqrt(Q) mapping reduces resonance gain
+      // For BPF: use 1/Q directly (standard reciprocal quality factor)
       rqLpf = (1/strudelLpq.max(0.001).sqrt).clip(0.01, 2);
       rqHpf = (1/strudelHpq.max(0.001).sqrt).clip(0.01, 2);
-      rqBpf = (1/strudelBpq.max(0.001).sqrt).clip(0.01, 2);
+      rqBpf = (1/strudelBpq.max(0.001)).clip(0.01, 2);
       
       // Base frequencies
       lpfFreq = strudelLpf.clip(20, 20000);
@@ -1099,6 +1098,8 @@ s.waitForBoot {
       // BPF only applied when strudelBpf > 0 (default is 0 = disabled)
       // Uses envelope-modulated frequency
       // Also cascades when strudelFtype > 0 for 24dB slope
+      // Note: SC's BPF has Q-dependent gain characteristics that differ from WebAudio
+      // This is an inherent difference - we use the same rq mapping as LPF/HPF
       signal = Select.ar(strudelBpf > 0, [
         signal,
         Select.ar(strudelFtype > 0, [

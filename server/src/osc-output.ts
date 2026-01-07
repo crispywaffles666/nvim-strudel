@@ -749,6 +749,13 @@ function hapToOscArgs(hap: any, cps: number): any[] {
   
   // Handle filter envelope parameters for lowpass filter
   // superdough uses: lpenv (amount in octaves), lpattack, lpdecay, lpsustain, lprelease, fanchor
+  // If any ADSR param is set but lpenv is not, default lpenv to 1 (matches superdough behavior)
+  const hasLpADSR = controls.lpattack !== undefined || controls.lpdecay !== undefined || 
+                     controls.lpsustain !== undefined || controls.lprelease !== undefined;
+  if (hasLpADSR && controls.lpenv === undefined) {
+    controls.lpenv = 1;  // Default envelope amount when ADSR is specified
+  }
+  
   if (controls.lpenv !== undefined) {
     controls.strudelLpEnv = controls.lpenv;
     delete controls.lpenv;
@@ -772,6 +779,13 @@ function hapToOscArgs(hap: any, cps: number): any[] {
   
   // Handle filter envelope parameters for highpass filter
   // superdough uses: hpenv (amount in octaves), hpattack, hpdecay, hpsustain, hprelease
+  // If any ADSR param is set but hpenv is not, default hpenv to 1 (matches superdough behavior)
+  const hasHpADSR = controls.hpattack !== undefined || controls.hpdecay !== undefined || 
+                     controls.hpsustain !== undefined || controls.hprelease !== undefined;
+  if (hasHpADSR && controls.hpenv === undefined) {
+    controls.hpenv = 1;  // Default envelope amount when ADSR is specified
+  }
+  
   if (controls.hpenv !== undefined) {
     controls.strudelHpEnv = controls.hpenv;
     delete controls.hpenv;
@@ -795,6 +809,13 @@ function hapToOscArgs(hap: any, cps: number): any[] {
   
   // Handle filter envelope parameters for bandpass filter
   // superdough uses: bpenv (amount in octaves), bpattack, bpdecay, bpsustain, bprelease
+  // If any ADSR param is set but bpenv is not, default bpenv to 1 (matches superdough behavior)
+  const hasBpADSR = controls.bpattack !== undefined || controls.bpdecay !== undefined || 
+                     controls.bpsustain !== undefined || controls.bprelease !== undefined;
+  if (hasBpADSR && controls.bpenv === undefined) {
+    controls.bpenv = 1;  // Default envelope amount when ADSR is specified
+  }
+  
   if (controls.bpenv !== undefined) {
     controls.strudelBpEnv = controls.bpenv;
     delete controls.bpenv;

@@ -57,8 +57,8 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | HPF + resonance | `s("saw").hpf(1000).hpq(5)` | 0.97 | 87.7% | Good |
 | LPF envelope | `s("bd").lpf(500).lpenv(2).lpdecay(0.5)` | 0.90 | 91.3% | Good |
 | LPF env negative | `s("saw").lpf(2000).lpenv(-2)` | 1.00 | 93.4% | Good |
-| BPF | `s("saw").bpf(500).bpq(5)` | 0.96 | 81.6% | Fair |
-| BPF envelope | `s("bd").bpf(1000).bpenv(2).bpdecay(0.5)` | 0.95 | 77.4% | Fair |
+| BPF | `s("saw").bpf(500).bpq(5)` | 0.95 | 91.0% | Good |
+| BPF envelope | `s("bd").bpf(1000).bpenv(2).bpdecay(0.5)` | 0.95 | 76.1% | Fair - envelope timing differs |
 | 24dB LPF | `note("c4").s("saw").lpf(500).ftype("24db")` | 1.00 | 95.1% | Excellent |
 | 24dB HPF | `note("c4").s("saw").hpf(800).ftype("24db")` | 0.96 | 88.3% | Good |
 | Ladder filter | `note("c4").s("saw").lpf(500).ftype("ladder")` | 1.00 | 94.1% | Good |
@@ -220,6 +220,9 @@ cd server && node compare-backends.mjs --all
   - When only `fmdecay` is set, sustain now defaults to 0.001 (AD envelope)
   - **FM + harmonicity**: 72.5% → 97.2% (+24.7%) - major improvement
   - **FM + envelope**: 67.1% → 96.8% (+29.7%) - major improvement
+- Fixed BPF Q mapping: use 1/Q instead of 1/sqrt(Q) for bandpass filters
+  - **BPF Q=5**: 81.6% → 91.0% (+9.4%) - proper reciprocal Q mapping
+  - Added filter envelope default (lpenv/hpenv/bpenv=1) when ADSR params specified
 - Updated Effects category average: 87.5% → 90.1%
 - Updated FM Synth category average: 80.8% → 93.7%
 - Updated Overall score: 91.4% → 92.4%
