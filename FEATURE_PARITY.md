@@ -132,7 +132,9 @@ This document tracks feature parity between the WebAudio backend (superdough) an
 | Delay | `s("bd").delay(0.5)` | 0.88 | 89.0% | Good |
 | Reverb | `s("bd").room(0.5)` | 0.98 | 84.2% | Fair |
 | Reverb + size | `s("bd").room(0.8).roomsize(4)` | 0.91 | 80.8% | Fair |
-| Convolution reverb | `s("bd").room(0.5).ir("hh")` | ~0.88 | ~88% | Good |
+| Convolution reverb | `s("bd").room(0.5).ir("hh")` | 0.86 | 87% | Good |
+| IR speed | `s("bd").ir("hh").irspeed(2)` | 0.98 | 84% | Good |
+| IR offset | `s("bd").ir("sd").irbegin(0.5)` | 0.96 | 86% | Good |
 | Phaser | `note("c4").s("saw").phaserrate(2).phaserdepth(0.5)` | 0.91 | 86.7% | Good |
 
 ### Gain & Dynamics
@@ -229,11 +231,17 @@ cd server && node compare-backends.mjs --all
   - **Presets 0, 2, 4, 6, 9**: 91-98% similarity - use modulo/comparison (Excellent)
   - **Presets 3, 5, 8, 10-14**: ~50% similarity - bitwise ops can't match in SC (Expected)
   - Custom expressions (`bbexpr`) are WebAudio-only (SC can't eval JS at runtime)
+- Implemented `irspeed` and `irbegin` for convolution reverb
+  - Added buffer resampling with linear interpolation in SC (like superdough's adjustLength)
+  - `irspeed`: Playback speed of IR sample (2 = double speed, 0.5 = half speed)
+  - `irbegin`: Offset into IR sample (0-1, where 0.5 = start from middle)
+  - **IR speed**: 84% similarity, 0.98 spectral correlation
+  - **IR offset**: 86% similarity, 0.96 spectral correlation
 
 ### 2026-01-06 (Session 9)
 - Implemented convolution reverb using PartConv
   - Added `strudel_convrev` module for impulse response-based reverb
-  - Supports `ir` (sample name), `irspeed` (not yet implemented), `irbegin` (not yet implemented)
+  - Supports `ir` (sample name), `irspeed` (playback speed), `irbegin` (offset 0-1)
   - Uses PartConv with FFT size 2048 for efficient real-time convolution
   - Spectral buffers are prepared and cached for each unique IR sample
   - Applied fixed normalization factor (2.0) to approximate WebAudio's ConvolverNode normalization

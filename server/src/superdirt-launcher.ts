@@ -1386,18 +1386,64 @@ s.waitForBoot {
             sampleOffset = (begin.clip(0, 1) * numFrames).floor.asInteger;
             newLength = (numFrames / speed.abs.max(0.01)).floor.asInteger;
             
-            // Create a new buffer for the modified IR
-            // For simplicity, we'll use the original buffer directly if speed=1 and begin=0
-            // Otherwise we'd need to resample/offset (more complex)
-            // TODO: Implement irspeed/irbegin buffer manipulation
-            
+            // Create a modified IR buffer if speed != 1 or begin != 0
+            // This matches superdough's adjustLength behavior
             if(speed == 1 && begin == 0, {
-              // Use original buffer directly
+              // Use original buffer directly - no modification needed
               irBuffer = origBuffer;
             }, {
-              // For now, just use original buffer (speed/begin not yet implemented)
-              ("Strudel IR: irspeed/irbegin not yet implemented, using original").postln;
-              irBuffer = origBuffer;
+              // Need to create a modified buffer with speed/begin applied
+              // This is done by reading samples at adjusted positions
+              var modifiedFrames, modBuffer;
+              
+              // Calculate new length based on speed
+              // speed=2 means play twice as fast = half the length
+              modifiedFrames = (numFrames / speed.abs.max(0.01)).floor.asInteger.max(256);
+              
+              // Allocate a new buffer for the modified IR
+              modBuffer = Buffer.alloc(s, modifiedFrames, origBuffer.numChannels);
+              s.sync;
+              
+              // Read the original buffer data and write resampled data
+              // Using loadToFloatArray to get the data, modify it, and write back
+              origBuffer.loadToFloatArray(action: { |floatArray|
+                var newArray, position, idx, leftIdx, rightIdx, frac, leftVal, rightVal;
+                var channels = origBuffer.numChannels;
+                
+                newArray = FloatArray.newClear(modifiedFrames * channels);
+                
+                // Resample with linear interpolation (like superdough's adjustLength)
+                modifiedFrames.do { |i|
+                  // Calculate source position: (sampleOffset + i * speed) % origLength
+                  // begin is 0-1 offset into the original
+                  position = (sampleOffset + (i * speed.abs)) % numFrames;
+                  
+                  // Handle negative speed (reverse)
+                  if(speed < 0, {
+                    position = numFrames - 1 - position;
+                  });
+                  
+                  // Linear interpolation between samples
+                  leftIdx = position.floor.asInteger;
+                  rightIdx = (leftIdx + 1) % numFrames;
+                  frac = position - leftIdx;
+                  
+                  // For each channel
+                  channels.do { |ch|
+                    leftVal = floatArray[(leftIdx * channels) + ch] ? 0;
+                    rightVal = floatArray[(rightIdx * channels) + ch] ? 0;
+                    newArray[(i * channels) + ch] = leftVal + ((rightVal - leftVal) * frac);
+                  };
+                };
+                
+                // Load the modified data back into the buffer
+                modBuffer.loadCollection(newArray);
+                s.sync;
+                ("Strudel IR: Created modified buffer with speed=" ++ speed ++ " begin=" ++ begin).postln;
+              });
+              s.sync;
+              
+              irBuffer = modBuffer;
             });
             
             // Calculate normalization factor similar to WebAudio's ConvolverNode
