@@ -183,11 +183,6 @@ async function main() {
     initLogging(args.logPath, args.logLevel);
   }
   
-  // Set envelope curve via env var (read by osc-output.ts)
-  if (args.envelopeCurve !== null) {
-    process.env.STRUDEL_ENVELOPE_CURVE = String(args.envelopeCurve);
-  }
-  
   const config: ServerConfig = {
     port: args.port,
     host: args.host,
@@ -196,6 +191,7 @@ async function main() {
   const useOsc = args.useOsc;
   const oscHost = args.oscHost;
   const oscPort = args.oscPort;
+  const envelopeCurve = args.envelopeCurve;
   const autoSuperDirt = args.autoSuperDirt;
   const superDirtVerbose = args.superDirtVerbose;
 
@@ -320,7 +316,11 @@ async function main() {
   // Note: SuperDirt may still be starting in the background, that's OK
   // OSC messages will be sent regardless; they'll be received once SuperDirt is ready
   if (useOsc) {
-    const oscEnabled = await engine.enableOsc(oscHost, oscPort);
+    const oscEnabled = await engine.enableOsc({
+      remoteIp: oscHost,
+      remotePort: oscPort,
+      envelopeCurve: envelopeCurve ?? undefined,
+    });
     if (oscEnabled) {
       console.log(`[strudel-server] OSC output enabled -> ${oscHost}:${oscPort}`);
       

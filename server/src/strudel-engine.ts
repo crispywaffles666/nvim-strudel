@@ -6,7 +6,7 @@ import * as mini from '@strudel/mini';
 import * as tonal from '@strudel/tonal';
 import { transpiler } from '@strudel/transpiler';
 import type { ActiveElement, VisualizationEvent } from './types.js';
-import { initOsc, sendHapToSuperDirt, isOscConnected, closeOsc, setAudioContextStartTime, isSynthSoundForOsc } from './osc-output.js';
+import { initOsc, sendHapToSuperDirt, isOscConnected, closeOsc, setAudioContextStartTime, isSynthSoundForOsc, OscConfig } from './osc-output.js';
 import { writeEngineState, clearEngineState } from './engine-state.js';
 import { loadSamples as loadSamplesForSuperDirt, initSampleManager, notifySuperDirtLoadSamples, setupOscPort } from './sample-manager.js';
 import { loadSoundsForCode, ensureDrumMachineMetadataLoaded, resolveDrumMachineBankSync } from './on-demand-loader.js';
@@ -542,12 +542,12 @@ export class StrudelEngine {
   }
 
   /**
-   * Enable OSC output to SuperDirt
+   * Enable OSC output for sending to SuperDirt/SuperCollider
    * Call this to send audio to SuperCollider/SuperDirt
    */
-  async enableOsc(host = '127.0.0.1', port = 57120): Promise<boolean> {
+  async enableOsc(config: OscConfig = {}): Promise<boolean> {
     try {
-      await initOsc(host, port);
+      await initOsc(config);
       this.oscEnabled = true;
       console.log('[strudel-engine] OSC output enabled');
       return true;

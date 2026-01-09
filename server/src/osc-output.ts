@@ -8,14 +8,13 @@ import { captureOscMessage, shouldCaptureOsc } from './file-writer.js';
 const OSC_REMOTE_IP = '127.0.0.1';
 const OSC_REMOTE_PORT = 57120;
 
-// Envelope curve for amplitude ADSR: 0 = linear (better for testing), -2 = exponential (default, better quality)
-// Set via STRUDEL_ENVELOPE_CURVE environment variable
-// Linear (0) matches superdough's WebAudio ramps exactly for comparison testing
-// Exponential (-2) sounds more natural and is StrudelDirt's default
-const ENVELOPE_CURVE = parseFloat(process.env.STRUDEL_ENVELOPE_CURVE ?? '-2');
-
 let udpPort: any = null;
 let isOpen = false;
+
+// Envelope curve for amplitude ADSR: 0 = linear (better for testing), -2 = exponential (default, better quality)
+// Linear (0) matches superdough's WebAudio ramps exactly for comparison testing
+// Exponential (-2) sounds more natural and is StrudelDirt's default
+let envelopeCurve = -2;
 
 // Clock synchronization
 // AudioContext time starts at 0 when created, we need to map it to Unix/NTP time
@@ -64,10 +63,25 @@ function audioTimeToUnixTime(audioTime: number): number {
   return audioContextStartTime + audioTime;
 }
 
+export interface OscConfig {
+  remoteIp?: string;
+  remotePort?: number;
+  /** Envelope curve: 0 = linear (for testing), -2 = exponential (default) */
+  envelopeCurve?: number;
+}
+
 /**
  * Initialize the OSC UDP port for sending messages to SuperDirt
  */
-export function initOsc(remoteIp = OSC_REMOTE_IP, remotePort = OSC_REMOTE_PORT): Promise<void> {
+export function initOsc(config: OscConfig = {}): Promise<void> {
+  const remoteIp = config.remoteIp ?? OSC_REMOTE_IP;
+  const remotePort = config.remotePort ?? OSC_REMOTE_PORT;
+  
+  // Set envelope curve if provided
+  if (config.envelopeCurve !== undefined) {
+    envelopeCurve = config.envelopeCurve;
+  }
+  
   return new Promise((resolve, reject) => {
     if (udpPort && isOpen) {
       console.log('[osc] Already connected');
@@ -675,9 +689,9 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       controls.decay = envDecay;
       controls.hold = envSustainLevel;  // This is sustainLevel (0-1), NOT holdTime!
       controls.release = envRelease;
-      // Envelope curve: configurable via STRUDEL_ENVELOPE_CURVE env var
+      // Envelope curve: 0 = linear (testing), -2 = exponential (default)
       // 0 = linear (for testing), -2 = exponential (default, better quality)
-      controls.curve = ENVELOPE_CURVE;
+      controls.curve = envelopeCurve;
       // sustain becomes holdtime in the synth (gate duration before release)
       // DirtEvent.sc calculates: totalDuration = sustain + release
       controls.sustain = delta;
@@ -734,8 +748,8 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     controls.decay = envDecay;
     controls.hold = envSustainLevel;
     controls.release = envRelease;
-    // Envelope curve: configurable via STRUDEL_ENVELOPE_CURVE env var
-    controls.curve = ENVELOPE_CURVE;
+    // Envelope curve: 0 = linear (testing), -2 = exponential (default)
+    controls.curve = envelopeCurve;
     controls.sustain = delta;
     
     // speed is critical - without it SuperDirt passes invalid value and synth is silent
@@ -768,8 +782,8 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       controls.decay = envDecay;
       controls.hold = envSustainLevel;
       controls.release = envRelease;
-      // Envelope curve: configurable via STRUDEL_ENVELOPE_CURVE env var
-      controls.curve = ENVELOPE_CURVE;
+      // Envelope curve: 0 = linear (testing), -2 = exponential (default)
+      controls.curve = envelopeCurve;
       controls.sustain = delta;
     }
   }

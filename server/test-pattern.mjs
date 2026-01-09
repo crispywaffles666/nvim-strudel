@@ -208,11 +208,12 @@ if (useOsc || oscScorePath) {
     
     // Initialize OSC connection
     console.log('Initializing OSC connection to SuperDirt...');
+    const envCurve = process.env.STRUDEL_ENVELOPE_CURVE ? parseFloat(process.env.STRUDEL_ENVELOPE_CURVE) : undefined;
     try {
-      await initOsc('127.0.0.1', 57120);
+      await initOsc({ remoteIp: '127.0.0.1', remotePort: 57120, envelopeCurve: envCurve });
       const oscPort = getOscPort();
       enableOscSampleLoading(oscPort);
-      engine.enableOsc('127.0.0.1', 57120);
+      engine.enableOsc({ remoteIp: '127.0.0.1', remotePort: 57120, envelopeCurve: envCurve });
       
       // Disable WebAudio when using OSC (same as index.ts does)
       engine.setWebAudioEnabled(false);
