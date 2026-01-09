@@ -64,39 +64,76 @@ export class SuperDirtLauncher {
   }
 
   /**
-   * Check if StrudelDirt quark is installed
+   * Check if StrudelDirt quark is installed (specifically, not just SuperDirt)
    * StrudelDirt is a fork of SuperDirt with Strudel-specific enhancements
    */
   static isStrudelDirtInstalled(): boolean {
     const home = process.env.HOME || '';
     // StrudelDirt installs as 'StrudelDirt' in the quarks directory
     const strudelDirtPath = join(home, '.local', 'share', 'SuperCollider', 'downloaded-quarks', 'StrudelDirt');
-    if (existsSync(strudelDirtPath)) {
-      return true;
-    }
-    // Also check for legacy SuperDirt (we'll use it if StrudelDirt isn't available)
+    return existsSync(strudelDirtPath);
+  }
+
+  /**
+   * Check if regular SuperDirt quark is installed (for fallback)
+   */
+  static isSuperDirtQuarkInstalled(): boolean {
+    const home = process.env.HOME || '';
     const superDirtPath = join(home, '.local', 'share', 'SuperCollider', 'downloaded-quarks', 'SuperDirt');
     return existsSync(superDirtPath);
   }
 
   /**
+   * Check if any SuperDirt variant is installed (StrudelDirt or SuperDirt)
+   */
+  static isAnyDirtInstalled(): boolean {
+    return SuperDirtLauncher.isStrudelDirtInstalled() || SuperDirtLauncher.isSuperDirtQuarkInstalled();
+  }
+
+  /**
    * Check if SuperDirt quark is installed (legacy alias)
-   * @deprecated Use isStrudelDirtInstalled() instead
+   * @deprecated Use isAnyDirtInstalled() or isStrudelDirtInstalled() instead
    */
   static isSuperDirtInstalled(): boolean {
-    return SuperDirtLauncher.isStrudelDirtInstalled();
+    return SuperDirtLauncher.isAnyDirtInstalled();
   }
 
   /**
    * Install StrudelDirt quark from GitHub (blocking operation)
-   * StrudelDirt is a fork of SuperDirt with Strudel-specific features:
+   * StrudelDirt is a REPLACEMENT for SuperDirt (fork with Strudel-specific features):
    * - supersaw, superpulse, pulse, sawtooth, triangle synths
    * - Filter envelopes (lpenv, hpenv, bpenv)
    * - Juno 60 chorus emulation
    * - Improved gain staging and filter behavior
+   * 
+   * IMPORTANT: StrudelDirt and SuperDirt cannot coexist - they have duplicate classes.
+   * This function will uninstall SuperDirt if present before installing StrudelDirt.
+   * 
    * Returns true if successful, false otherwise
    */
   static installStrudelDirt(): boolean {
+    // First, uninstall regular SuperDirt if it exists (they cannot coexist)
+    if (SuperDirtLauncher.isSuperDirtQuarkInstalled()) {
+      console.log('[strudeldirt] Removing standard SuperDirt quark (StrudelDirt replaces it)...');
+      try {
+        execSync('echo \'Quarks.uninstall("SuperDirt"); 0.exit;\' | sclang', {
+          stdio: 'inherit',
+          timeout: 60000,
+        });
+        console.log('[strudeldirt] SuperDirt quark removed');
+      } catch (err) {
+        console.warn('[strudeldirt] Failed to uninstall SuperDirt via Quarks, removing directory...');
+        // Try direct removal if Quarks.uninstall fails
+        try {
+          const superDirtPath = join(process.env.HOME || '', '.local', 'share', 'SuperCollider', 'downloaded-quarks', 'SuperDirt');
+          execSync(`rm -rf "${superDirtPath}"`, { stdio: 'inherit' });
+          console.log('[strudeldirt] SuperDirt directory removed');
+        } catch (rmErr) {
+          console.error('[strudeldirt] Could not remove SuperDirt:', rmErr);
+        }
+      }
+    }
+
     console.log('[strudeldirt] Installing StrudelDirt quark from GitHub...');
     try {
       // Install StrudelDirt from daslyfe's fork
@@ -1200,7 +1237,24 @@ s.waitForBoot {
     }
 
     // Check/install StrudelDirt quark (or fall back to SuperDirt)
-    if (!SuperDirtLauncher.isStrudelDirtInstalled()) {
+    // Also handle the broken state where both are installed (causes duplicate class errors)
+    const hasStrudelDirt = SuperDirtLauncher.isStrudelDirtInstalled();
+    const hasSuperDirt = SuperDirtLauncher.isSuperDirtQuarkInstalled();
+    
+    if (hasStrudelDirt && hasSuperDirt) {
+      // Broken state - both installed, need to remove SuperDirt
+      // We MUST remove via filesystem because sclang can't compile with duplicate classes
+      console.log('[strudeldirt] Both StrudelDirt and SuperDirt are installed (conflict)');
+      console.log('[strudeldirt] Removing SuperDirt directory to resolve duplicate class errors...');
+      const superDirtPath = join(process.env.HOME || '', '.local', 'share', 'SuperCollider', 'downloaded-quarks', 'SuperDirt');
+      try {
+        execSync(`rm -rf "${superDirtPath}"`, { stdio: 'inherit' });
+        console.log('[strudeldirt] SuperDirt directory removed successfully');
+      } catch (rmErr) {
+        console.error('[strudeldirt] Could not remove SuperDirt - please remove manually:', superDirtPath);
+        return false;
+      }
+    } else if (!hasStrudelDirt) {
       console.log('[strudeldirt] StrudelDirt quark not found, installing...');
       if (!SuperDirtLauncher.installStrudelDirt()) {
         return false;
