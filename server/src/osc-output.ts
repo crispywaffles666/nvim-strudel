@@ -115,7 +115,7 @@ export function isOscConnected(): boolean {
 }
 
 /**
- * Synth sounds that have SuperDirt SynthDefs
+ * Synth sounds that can be routed to OSC (SuperDirt/StrudelDirt)
  * These can be routed to OSC instead of requiring Web Audio
  */
 const oscSynthSounds = new Set([
@@ -132,6 +132,26 @@ const oscSynthSounds = new Set([
 ]);
 
 /**
+ * StrudelDirt synths that have synthGain = 0.27 applied internally
+ * These need gain compensation to match WebAudio volumes
+ */
+const strudelDirtSynths = new Set([
+  // Basic waveforms
+  'sine', 'sin', 'sawtooth', 'saw', 'square', 'sqr', 'triangle', 'tri',
+  // Noise
+  'white', 'pink', 'brown',
+  // Extended synths
+  'pulse', 'supersaw', 'superpulse', 'sbd', 'sbd2',
+]);
+
+/**
+ * Check if a sound is a StrudelDirt synth (needs gain compensation)
+ */
+function isStrudelDirtSynth(soundName: string): boolean {
+  return strudelDirtSynths.has(soundName);
+}
+
+/**
  * Check if a sound name is a synth that can be played via OSC
  */
 export function isSynthSoundForOsc(soundName: string): boolean {
@@ -146,19 +166,29 @@ export function getOscPort(): any {
 }
 
 /**
- * Convert superdough-style gain to SuperDirt gain
+ * Convert superdough-style gain to StrudelDirt gain
  * 
- * superdough uses linear gain (default 0.8, pattern gain applied directly)
- * SuperDirt's dirt_gate applies: amp = amp * gain^4 (where amp=1 by default)
+ * superdough uses linear gain (default varies by sound type)
  * 
- * To match volumes, we invert SuperDirt's gain^4 curve:
- * If we want output level L, we need: gain^4 = L
- * So: gain = L^0.25
+ * StrudelDirt's dirt_gate applies: gain = StrudelUtils.gainCurve(gain) = gain^2
+ * Additionally, StrudelDirt synths apply synthGain = 0.27 (~-11.4dB)
+ * 
+ * To match volumes, we need to:
+ * 1. Invert the gain^2 curve: gain = L^0.5
+ * 2. Compensate for synthGain: multiply by 1/0.27 ≈ 3.7 (for synth sounds)
+ * 
+ * For samples, only the gain^2 curve applies (sampleGain = 1.0)
  */
 function convertGainForSuperDirt(superdoughGain: number): number {
-  // Invert SuperDirt's gain^4 curve: gain = targetLevel^0.25
-  return Math.pow(superdoughGain, 0.25);
+  // Invert StrudelDirt's gain^2 curve: gain = targetLevel^0.5
+  return Math.pow(superdoughGain, 0.5);
 }
+
+/**
+ * Additional gain boost for synth sounds to compensate for StrudelDirt's synthGain = 0.27
+ * This is applied after convertGainForSuperDirt for oscillator synths only
+ */
+const STRUDELDIRT_SYNTH_GAIN_COMPENSATION = 1 / 0.27; // ≈ 3.7
 
 /**
  * Calculate ADSR values matching superdough's getADSRValues behavior
@@ -971,7 +1001,15 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     }
   }
   
-  // Convert gain to SuperDirt's gain curve (applies to all synth sounds)
+  // Apply gain compensation for StrudelDirt synths
+  // StrudelDirt synths have synthGain = 0.27 baked in, so we need to boost gain
+  // to match WebAudio levels (which don't have this reduction)
+  const synthSoundName = controls.s || controls.sound || '';
+  if (isStrudelDirtSynth(synthSoundName)) {
+    controls.gain = controls.gain * STRUDELDIRT_SYNTH_GAIN_COMPENSATION;
+  }
+  
+  // Convert gain to StrudelDirt's gain curve (gain^2)
   controls.gain = convertGainForSuperDirt(controls.gain);
 
   // Flatten to array of [key, value, key, value, ...]
