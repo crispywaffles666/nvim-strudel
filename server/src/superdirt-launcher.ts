@@ -602,10 +602,7 @@ s.waitForBoot {
                                                  strudelFtype = 0,
                                                  strudelDjf = -1|
       var signal, rqLpf, rqHpf, rqBpf, lpfFreq, hpfFreq, bpfFreq;
-      var lpfEnvFreq, hpfEnvFreq, bpfEnvFreq, lpfEnv, hpfEnv, bpfEnv;
-      var lpfEnvAbs, hpfEnvAbs, bpfEnvAbs, lpfOffset, hpfOffset, bpfOffset;
-      var lpfMin, lpfMax, hpfMin, hpfMax, bpfMin, bpfMax;
-      var djfV, djfCutoff, djfSignal;
+      var lpfEnvFreq, hpfEnvFreq, bpfEnvFreq;
       var ladderRes, ladderFiltered, standardFiltered;
       
       signal = In.ar(out, ${channels});
@@ -653,59 +650,49 @@ s.waitForBoot {
       hpfFreq = strudelHpf.clip(20, 20000);
       bpfFreq = strudelBpf.clip(20, 20000);
       
-      // Apply filter envelopes if env amount is non-zero
-      // superdough uses octave-based envelope: freq * 2^(env * envelope_value)
-      // fanchor determines the pivot point: 0 = sweep up from cutoff, 1 = sweep down, 0.5 = centered
+      // Apply filter envelopes using StrudelUtils.calculateCutoff from StrudelDirt
+      // This gives us their tested envelope implementation with proper gate timing
+      // StrudelUtils.calculateCutoff(cutoff, anchor, envamt, hold, holdtime, attack, decay, release, cutmin, cutmax)
+      // - cutoff: base frequency
+      // - anchor: envelope pivot point (0=up from cutoff, 1=down, 0.5=centered)
+      // - envamt: envelope amount in octaves
+      // - hold: sustain level (0-1)
+      // - holdtime: note duration (sustain param)
+      // - attack, decay, release: envelope times
+      // - cutmin, cutmax: frequency limits
       
-      // LPF envelope
-      lpfEnvAbs = strudelLpEnv.abs;
-      lpfOffset = lpfEnvAbs * strudelFanchor;
-      lpfMin = (lpfFreq * (2 ** lpfOffset.neg)).clip(20, 20000);
-      lpfMax = (lpfFreq * (2 ** (lpfEnvAbs - lpfOffset))).clip(20, 20000);
-      // If env is negative, swap min and max
-      // NOTE: Using numeric curve -4 instead of \exp because SC's \exp symbol curve
-      // doesn't work with envelopes that start at or pass through 0 (produces NaN).
-      // -4 gives a similar exponential-like decay without the NaN issue.
-      lpfEnv = EnvGen.kr(
-        Env.adsr(strudelLpAttack, strudelLpDecay, strudelLpSustain, strudelLpRelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      lpfEnvFreq = Select.kr(strudelLpEnv < 0, [
-        lpfEnv.linexp(0, 1, lpfMin.max(20), lpfMax.max(20)),
-        lpfEnv.linexp(0, 1, lpfMax.max(20), lpfMin.max(20))
+      // LPF envelope - use StrudelUtils if envelope is active, otherwise base frequency
+      lpfEnvFreq = Select.kr(strudelLpEnv.abs > 0.001, [
+        lpfFreq,
+        StrudelUtils.calculateCutoff(
+          lpfFreq, strudelFanchor, strudelLpEnv,
+          strudelLpSustain, sustain,
+          strudelLpAttack, strudelLpDecay, strudelLpRelease,
+          20, 20000
+        )
       ]);
-      // If no envelope, just use base frequency
-      lpfEnvFreq = Select.kr(strudelLpEnv.abs > 0.001, [lpfFreq, lpfEnvFreq]);
       
-      // HPF envelope  
-      hpfEnvAbs = strudelHpEnv.abs;
-      hpfOffset = hpfEnvAbs * strudelFanchor;
-      hpfMin = (hpfFreq * (2 ** hpfOffset.neg)).clip(20, 20000);
-      hpfMax = (hpfFreq * (2 ** (hpfEnvAbs - hpfOffset))).clip(20, 20000);
-      hpfEnv = EnvGen.kr(
-        Env.adsr(strudelHpAttack, strudelHpDecay, strudelHpSustain, strudelHpRelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      hpfEnvFreq = Select.kr(strudelHpEnv < 0, [
-        hpfEnv.linexp(0, 1, hpfMin.max(20), hpfMax.max(20)),
-        hpfEnv.linexp(0, 1, hpfMax.max(20), hpfMin.max(20))
+      // HPF envelope
+      hpfEnvFreq = Select.kr(strudelHpEnv.abs > 0.001, [
+        hpfFreq,
+        StrudelUtils.calculateCutoff(
+          hpfFreq, strudelFanchor, strudelHpEnv,
+          strudelHpSustain, sustain,
+          strudelHpAttack, strudelHpDecay, strudelHpRelease,
+          20, 20000
+        )
       ]);
-      hpfEnvFreq = Select.kr(strudelHpEnv.abs > 0.001, [hpfFreq, hpfEnvFreq]);
       
       // BPF envelope
-      bpfEnvAbs = strudelBpEnv.abs;
-      bpfOffset = bpfEnvAbs * strudelFanchor;
-      bpfMin = (bpfFreq * (2 ** bpfOffset.neg)).clip(20, 20000);
-      bpfMax = (bpfFreq * (2 ** (bpfEnvAbs - bpfOffset))).clip(20, 20000);
-      bpfEnv = EnvGen.kr(
-        Env.adsr(strudelBpAttack, strudelBpDecay, strudelBpSustain, strudelBpRelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      bpfEnvFreq = Select.kr(strudelBpEnv < 0, [
-        bpfEnv.linexp(0, 1, bpfMin.max(20), bpfMax.max(20)),
-        bpfEnv.linexp(0, 1, bpfMax.max(20), bpfMin.max(20))
+      bpfEnvFreq = Select.kr(strudelBpEnv.abs > 0.001, [
+        bpfFreq,
+        StrudelUtils.calculateCutoff(
+          bpfFreq, strudelFanchor, strudelBpEnv,
+          strudelBpSustain, sustain,
+          strudelBpAttack, strudelBpDecay, strudelBpRelease,
+          20, 20000
+        )
       ]);
-      bpfEnvFreq = Select.kr(strudelBpEnv.abs > 0.001, [bpfFreq, bpfEnvFreq]);
       
       // Apply filters
       // LPF and HPF always applied (with neutral defaults: LPF=20000, HPF=20)
