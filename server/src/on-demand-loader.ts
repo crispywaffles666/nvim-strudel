@@ -61,6 +61,9 @@ async function loadDrumMachineMetadata(): Promise<void> {
     for (const [fullName, shortName] of Object.entries(aliases)) {
       drumMachineAliases.set(shortName.toLowerCase(), fullName);
       drumMachineAliases.set(shortName, fullName); // Original case too
+      // Also map fullName -> fullName so bank("RolandTR909") works too
+      drumMachineAliases.set(fullName.toLowerCase(), fullName);
+      drumMachineAliases.set(fullName, fullName);
     }
     
     // Load the sample map
