@@ -8,6 +8,12 @@ import { captureOscMessage, shouldCaptureOsc } from './file-writer.js';
 const OSC_REMOTE_IP = '127.0.0.1';
 const OSC_REMOTE_PORT = 57120;
 
+// Envelope curve for amplitude ADSR: 0 = linear (better for testing), -2 = exponential (default, better quality)
+// Set via STRUDEL_ENVELOPE_CURVE environment variable
+// Linear (0) matches superdough's WebAudio ramps exactly for comparison testing
+// Exponential (-2) sounds more natural and is StrudelDirt's default
+const ENVELOPE_CURVE = parseFloat(process.env.STRUDEL_ENVELOPE_CURVE ?? '-2');
+
 let udpPort: any = null;
 let isOpen = false;
 
@@ -669,9 +675,9 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       controls.decay = envDecay;
       controls.hold = envSustainLevel;  // This is sustainLevel (0-1), NOT holdTime!
       controls.release = envRelease;
-      // Use linear envelope curve (0) to match superdough's linear WebAudio ramps
-      // StrudelDirt defaults to curve: -2 (exponential) which causes peak differences
-      controls.curve = 0;
+      // Envelope curve: configurable via STRUDEL_ENVELOPE_CURVE env var
+      // 0 = linear (for testing), -2 = exponential (default, better quality)
+      controls.curve = ENVELOPE_CURVE;
       // sustain becomes holdtime in the synth (gate duration before release)
       // DirtEvent.sc calculates: totalDuration = sustain + release
       controls.sustain = delta;
@@ -728,8 +734,8 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     controls.decay = envDecay;
     controls.hold = envSustainLevel;
     controls.release = envRelease;
-    // Use linear envelope curve (0) to match superdough's linear WebAudio ramps
-    controls.curve = 0;
+    // Envelope curve: configurable via STRUDEL_ENVELOPE_CURVE env var
+    controls.curve = ENVELOPE_CURVE;
     controls.sustain = delta;
     
     // speed is critical - without it SuperDirt passes invalid value and synth is silent
@@ -762,8 +768,8 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       controls.decay = envDecay;
       controls.hold = envSustainLevel;
       controls.release = envRelease;
-      // Use linear envelope curve (0) to match superdough's linear WebAudio ramps
-      controls.curve = 0;
+      // Envelope curve: configurable via STRUDEL_ENVELOPE_CURVE env var
+      controls.curve = ENVELOPE_CURVE;
       controls.sustain = delta;
     }
   }

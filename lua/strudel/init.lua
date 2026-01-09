@@ -44,6 +44,11 @@ local function get_server_cmd()
           table.insert(cmd, '--auto-superdirt')
         end
       end
+      -- Envelope curve: -2 = exponential (default), 0 = linear (for testing)
+      if config.audio.envelope_curve then
+        table.insert(cmd, '--envelope-curve')
+        table.insert(cmd, tostring(config.audio.envelope_curve))
+      end
     end
 
     -- Add logging configuration
