@@ -11,7 +11,7 @@
  * map note/midinote to SuperDirt's n + speed parameters.
  */
 
-import { isNote, noteToMidi } from '@strudel/core/util.mjs';
+import { isNote, noteToMidi, valueToMidi } from '@strudel/core/util.mjs';
 
 export interface SampleMapping {
   /** Sample index in the bank */
@@ -59,38 +59,6 @@ export interface BankMetadata {
 const bankRegistry = new Map<string, BankMetadata>();
 
 /**
- * Parse a note name to MIDI number
- * Handles formats like: A0, C1, Ds1 (D#1), Fs4 (F#4), Bb3, etc.
- */
-function parseNoteName(name: string): number | null {
-  // Handle 's' suffix for sharps (e.g., "Ds1" = D#1, "Fs4" = F#4)
-  const normalized = name.replace(/s(\d)/, '#$1');
-  
-  const match = normalized.match(/^([A-Ga-g])([#b]?)(-?\d+)$/);
-  if (!match) return null;
-  
-  const noteMap: Record<string, number> = {
-    'C': 0, 'c': 0,
-    'D': 2, 'd': 2,
-    'E': 4, 'e': 4,
-    'F': 5, 'f': 5,
-    'G': 7, 'g': 7,
-    'A': 9, 'a': 9,
-    'B': 11, 'b': 11,
-  };
-  
-  let semitone = noteMap[match[1]];
-  if (semitone === undefined) return null;
-  
-  if (match[2] === '#') semitone += 1;
-  else if (match[2] === 'b') semitone -= 1;
-  
-  const octave = parseInt(match[3], 10);
-  // MIDI note: C-1 = 0, C0 = 12, C4 = 60
-  return (octave + 1) * 12 + semitone;
-}
-
-/**
  * Register a sample bank's metadata from its JSON structure
  * 
  * @param bankName Name of the bank (e.g., "piano")
@@ -117,9 +85,13 @@ export function registerBankMetadata(
     // Try to parse first few keys as notes
     const parsedNotes: Array<{ key: string; midi: number }> = [];
     for (const key of noteKeys) {
-      const midi = parseNoteName(key);
-      if (midi !== null) {
-        parsedNotes.push({ key, midi });
+      if (isNote(key)) {
+        try {
+          const midi = noteToMidi(key);
+          parsedNotes.push({ key, midi });
+        } catch {
+          // noteToMidi throws if not a valid note, skip this key
+        }
       }
     }
     
@@ -322,25 +294,8 @@ export function processValueForOsc(value: Record<string, any>): Record<string, a
     return value;
   }
   
-  // Get the target note (same logic as superdough's valueToMidi with fallback 36)
-  let targetMidi: number = 36; // Default C2, same as superdough
-  
-  if (typeof value.freq === 'number') {
-    // freq takes priority (same as superdough)
-    targetMidi = Math.round(12 * Math.log2(value.freq / 440) + 69);
-  } else if (typeof value.note === 'number') {
-    targetMidi = value.note;
-  } else if (typeof value.note === 'string') {
-    const parsed = parseNoteName(value.note);
-    if (parsed !== null) {
-      targetMidi = parsed;
-    } else if (isNote(value.note)) {
-      targetMidi = noteToMidi(value.note);
-    }
-  } else if (typeof value.midinote === 'number') {
-    targetMidi = value.midinote;
-  }
-  // If none of the above, targetMidi stays at 36 (C2)
+  // Get the target MIDI note using @strudel/core's valueToMidi (fallback 36 = C2)
+  const targetMidi = Math.round(valueToMidi(value, 36));
   
   // Calculate n and speed
   const result = calculateNAndSpeed(bankName, targetMidi);

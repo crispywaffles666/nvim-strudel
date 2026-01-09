@@ -1,5 +1,6 @@
 // @ts-ignore - osc has no type definitions
 import osc from 'osc';
+import { isNote, noteToMidi, midiToFreq } from '@strudel/core/util.mjs';
 import { processValueForOsc, isBankSoundfont } from './sample-metadata.js';
 import { resolveDrumMachineBankSync } from './on-demand-loader.js';
 import { captureOscMessage, shouldCaptureOsc } from './file-writer.js';
@@ -19,28 +20,6 @@ let envelopeCurve = -2;
 // Clock synchronization
 // AudioContext time starts at 0 when created, we need to map it to Unix/NTP time
 let audioContextStartTime: number | null = null; // Unix time when AudioContext was created
-
-/**
- * Parse a note name like "c4", "d#5", "eb3" into a MIDI note number
- * Returns undefined if the string is not a valid note name
- */
-function parseNoteName(name: string): number | undefined {
-  const match = name.toLowerCase().match(/^([a-g])([#bs]?)(-?\d+)?$/);
-  if (!match) return undefined;
-  
-  const noteMap: Record<string, number> = {
-    'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11,
-  };
-  
-  let note = noteMap[match[1]];
-  if (note === undefined) return undefined;
-  
-  if (match[2] === '#' || match[2] === 's') note += 1;  // 's' is also used for sharp
-  else if (match[2] === 'b') note -= 1;
-  
-  const octave = match[3] ? parseInt(match[3], 10) : 4;
-  return (octave + 1) * 12 + note;
-}
 
 /**
  * Set the AudioContext start time for clock synchronization
@@ -522,14 +501,13 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       let midiNote: number;
       if (typeof controls.note === 'number') {
         midiNote = controls.note;
-      } else if (typeof controls.note === 'string') {
-        // Parse note name like "c4", "d#5", "eb3"
-        const parsed = parseNoteName(controls.note);
-        midiNote = parsed !== undefined ? parsed : 60;
+      } else if (typeof controls.note === 'string' && isNote(controls.note)) {
+        // Parse note name like "c4", "d#5", "eb3" using @strudel/core
+        midiNote = noteToMidi(controls.note);
       } else {
         midiNote = 60;
       }
-      controls.freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+      controls.freq = midiToFreq(midiNote);
     } else if (controls.freq === undefined) {
       // Default frequency depends on synth type
       if (synthInstrument === 'sbd2') {
