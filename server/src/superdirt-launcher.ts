@@ -299,9 +299,9 @@ s.waitForBoot {
           interpolation: 2
         );
         
-        // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
+        // NO internal envelope - StrudelDirt's strudel_envelope module applies ADSR to all sounds
         // This envelope is flat (level=1) and just controls synth duration via doneAction
-        // The actual amplitude shaping happens in the common strudel_adsr module
+        // The actual amplitude shaping happens in the strudel_envelope module
         env = EnvGen.kr(
           Env.new([1, 1], [sfSustain + 0.1], \\lin),
           doneAction: 2
@@ -393,7 +393,7 @@ s.waitForBoot {
     // ZZFX Chip Sound Synth
     // Exact port of ZzFX algorithm from zzfx_fork.mjs
     // https://github.com/KilledByAPixel/ZzFX
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
+    // NO internal envelope - StrudelDirt's strudel_envelope module applies ADSR
     // ========================================
     
     SynthDef(\\strudel_zzfx, { |out, freq = 220, sustain = 1, pan = 0, speed = 1,
@@ -567,50 +567,6 @@ s.waitForBoot {
     // ========================================
     
     s.sync;  // Ensure custom synths are registered
-    
-    // ========================================
-    // Strudel ADSR Envelope Module (for SAMPLES only)
-    // Synths have built-in envelopes, but samples use SuperDirt's sample SynthDefs
-    // This module applies ADSR envelope to samples when strudelEnv* params are present
-    // Uses custom parameter names to avoid triggering SuperDirt's dirt_envelope
-    // ========================================
-    
-    SynthDef("strudel_adsr" ++ ${channels}, { |out, strudelEnvAttack = 0.001, strudelEnvDecay = 0.001, 
-                                               strudelEnvSustainLevel = 1, strudelEnvRelease = 0.01,
-                                               strudelEnvHold = 1|
-      var signal, env;
-      signal = In.ar(out, ${channels});
-      // ADSR envelope with linear curves to match superdough
-      // Levels: 0 -> 1 (attack) -> sustainLevel (decay) -> sustainLevel (hold) -> 0 (release)
-      env = EnvGen.ar(
-        Env.new(
-          [0, 1, strudelEnvSustainLevel, strudelEnvSustainLevel, 0],
-          [strudelEnvAttack, strudelEnvDecay, strudelEnvHold, strudelEnvRelease],
-          \\lin
-        )
-      );
-      ReplaceOut.ar(out, signal * env);
-    }, [\\ir, \\ir, \\ir, \\ir, \\ir, \\ir]).add;
-    "Added: strudel_adsr${channels}".postln;
-    
-    // Register the strudel_adsr module with SuperDirt (for samples)
-    // This module triggers when strudelEnvAttack parameter is present
-    // and applies our ADSR envelope INSTEAD of SuperDirt's dirt_envelope
-    ~dirt.addModule('strudel_adsr',
-      { |dirtEvent|
-        dirtEvent.sendSynth('strudel_adsr' ++ ${channels},
-          [
-            strudelEnvAttack: ~strudelEnvAttack,
-            strudelEnvDecay: ~strudelEnvDecay,
-            strudelEnvSustainLevel: ~strudelEnvSustainLevel,
-            strudelEnvRelease: ~strudelEnvRelease,
-            strudelEnvHold: ~strudelEnvHold,
-            out: ~out
-          ])
-      }, { ~strudelEnvAttack.notNil });
-    "*** Strudel ADSR module registered (for samples) ***".postln;
-    
-    s.sync;
     
     // ========================================
     // Strudel Filter Module (for SAMPLES and SYNTHS)
@@ -1134,7 +1090,6 @@ s.waitForBoot {
         'spectral-delay', 'spectral-freeze', 'spectral-comb', 'spectral-smear',
         'spectral-scram', 'spectral-binshift', 'spectral-hbrick', 'spectral-lbrick',
         'spectral-conformer', 'spectral-enhance', 'dj-filter', 'compressor',
-        'strudel_adsr',
         'strudel_tremolo',
         'strudel_filter',
         'strudel_convrev',  // Convolution reverb after other effects
