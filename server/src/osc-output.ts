@@ -119,11 +119,15 @@ export function isOscConnected(): boolean {
  * These can be routed to OSC instead of requiring Web Audio
  */
 const oscSynthSounds = new Set([
-  'sine', 'sawtooth', 'saw', 'square', 'triangle', 'tri',
+  // Basic waveforms - StrudelDirt provides these
+  'sine', 'sin', 'sawtooth', 'saw', 'square', 'sqr', 'triangle', 'tri',
+  // Noise - StrudelDirt provides these
   'white', 'pink', 'brown',
-  // ZZFX chip sounds
+  // Extended synths - StrudelDirt provides these
+  'pulse', 'supersaw', 'superpulse', 'sbd', 'sbd2',
+  // ZZFX chip sounds - our custom synth
   'zzfx', 'z_sine', 'z_sawtooth', 'z_triangle', 'z_square', 'z_tan', 'z_noise',
-  // ByteBeat
+  // ByteBeat - our custom synth
   'bytebeat'
 ]);
 
@@ -377,26 +381,29 @@ function hapToOscArgs(hap: any, cps: number): any[] {
 
   
   // Handle synth sounds (oscillators)
-  // These use our custom strudel_* SynthDefs instead of sample playback
+  // StrudelDirt provides these synths directly - no strudel_* prefix needed
+  // For our custom synths (zzfx, bytebeat), we still use strudel_* prefix
   const synthSoundMap: Record<string, string> = {
-    // Basic waveforms
-    'sine': 'strudel_sine',
-    'sin': 'strudel_sine',      // alias
-    'sawtooth': 'strudel_sawtooth',
-    'saw': 'strudel_saw',
-    'square': 'strudel_square',
-    'sqr': 'strudel_square',    // alias
-    'triangle': 'strudel_triangle',
-    'tri': 'strudel_tri',
-    // Noise types
-    'white': 'strudel_white',
-    'pink': 'strudel_pink',
-    'brown': 'strudel_brown',
-    // Extended synths
-    'pulse': 'strudel_pulse',   // pulse wave with PWM
-    'supersaw': 'strudel_supersaw', // unison detuned saws
-    'sbd': 'strudel_sbd',       // synthesized bass drum
-    // ZZFX chip sounds - all use strudel_zzfx with different zshape
+    // Basic waveforms - StrudelDirt provides these directly
+    'sine': 'sine',
+    'sin': 'sine',            // alias
+    'sawtooth': 'sawtooth',
+    'saw': 'sawtooth',        // alias (StrudelDirt uses 'sawtooth')
+    'square': 'pulse',        // StrudelDirt uses pulse with width=0.5 for square
+    'sqr': 'pulse',           // alias
+    'triangle': 'triangle',
+    'tri': 'triangle',        // alias (StrudelDirt uses 'triangle')
+    // Noise types - StrudelDirt provides these
+    'white': 'white',
+    'pink': 'pink',
+    'brown': 'brown',
+    // Extended synths - StrudelDirt provides these
+    'pulse': 'pulse',         // pulse wave with PWM (z1=width, z2=modspeed, z3=moddepth)
+    'supersaw': 'supersaw',   // unison detuned saws (uses supersaw1-10 internally)
+    'superpulse': 'superpulse', // unison detuned pulses
+    'sbd': 'sbd2',            // synthesized bass drum (StrudelDirt uses sbd2)
+    'sbd2': 'sbd2',           // direct alias
+    // ZZFX chip sounds - our custom synth (not in StrudelDirt)
     'zzfx': 'strudel_zzfx',
     'z_sine': 'strudel_zzfx',
     'z_sawtooth': 'strudel_zzfx',
@@ -404,7 +411,7 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     'z_square': 'strudel_zzfx',
     'z_tan': 'strudel_zzfx',
     'z_noise': 'strudel_zzfx',
-    // ByteBeat - 8-bit procedural audio with 15 built-in presets
+    // ByteBeat - our custom synth (not in StrudelDirt)
     'bytebeat': 'strudel_bytebeat',
   };
   
@@ -448,8 +455,8 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       controls.freq = 440 * Math.pow(2, (midiNote - 69) / 12);
     } else if (controls.freq === undefined) {
       // Default frequency depends on synth type
-      if (synthInstrument === 'strudel_sbd') {
-        // sbd uses MIDI note 29 (F1 ≈ 43.65 Hz) as default
+      if (synthInstrument === 'sbd2') {
+        // sbd2 uses MIDI note 29 (F1 ≈ 43.65 Hz) as default
         // This matches superdough's getFrequencyFromValue(value, 29)
         controls.freq = 43.65;  // F1 - superdough default for sbd
       } else {
@@ -526,42 +533,46 @@ function hapToOscArgs(hap: any, cps: number): any[] {
       // ByteBeat has its own gain (0.2) baked into the SynthDef
       // like ZZFX, don't apply the 0.3 multiplier
       controls.gain = controls.gain ?? 0.8;
-    } else if (synthInstrument === 'strudel_pulse') {
-      // Pulse wave synth with PWM (pulse width modulation)
-      // Map superdough's pulse params to our SynthDef
-      // pw = pulse width (0-1, default 0.5 = square wave)
-      // pwrate = LFO rate for PWM modulation (Hz)
-      // pwsweep = PWM modulation depth (how much pw oscillates)
-      if (controls.pw !== undefined) controls.pw = controls.pw;
-      if (controls.pwrate !== undefined) controls.pwrate = controls.pwrate;
-      if (controls.pwsweep !== undefined) controls.pwsweep = controls.pwsweep;
+    } else if (synthInstrument === 'pulse') {
+      // Pulse wave synth with PWM - StrudelDirt version
+      // StrudelDirt uses z1/z2/z3 params: z1=width, z2=modspeed, z3=moddepth
+      // Map superdough's pw/pwrate/pwsweep to StrudelDirt's z1/z2/z3
+      if (controls.pw !== undefined && controls.z1 === undefined) {
+        controls.z1 = controls.pw;
+      }
+      if (controls.pwrate !== undefined && controls.z2 === undefined) {
+        controls.z2 = controls.pwrate;
+      }
+      if (controls.pwsweep !== undefined && controls.z3 === undefined) {
+        controls.z3 = controls.pwsweep;
+      }
+      // For square wave emulation, set z1=0.5 (50% duty cycle) if not specified
+      if (soundName === 'square' || soundName === 'sqr') {
+        controls.z1 = controls.z1 ?? 0.5;
+      }
       
       // Apply standard synth gain reduction
       controls.gain = (controls.gain ?? 0.8) * 0.3;
-    } else if (synthInstrument === 'strudel_supersaw') {
-      // Supersaw synth - multiple detuned sawtooth oscillators
-      // Map superdough's supersaw params to our SynthDef
-      // unison = number of voices (1-16)
-      // spread = stereo spread of voices (-1 to 1)
-      // detune = detune amount in semitones
+    } else if (synthInstrument === 'supersaw') {
+      // Supersaw synth - StrudelDirt version
+      // StrudelDirt uses unison, spread, detune (same as superdough)
       if (controls.unison !== undefined) controls.unison = controls.unison;
       if (controls.spread !== undefined) controls.spread = controls.spread;
       if (controls.detune !== undefined) controls.detune = controls.detune;
       
       // Apply standard synth gain reduction
       controls.gain = (controls.gain ?? 0.8) * 0.3;
-    } else if (synthInstrument === 'strudel_sbd') {
-      // Synthesized bass drum
-      // sbd uses its own envelope (not strudelEnv*), so we skip ADSR handling below
-      // Parameters passed through to SynthDef:
-      // decay = amplitude decay time
-      // pdecay = pitch envelope decay time
-      // penv = pitch envelope depth in semitones (how high the pitch starts)
-      // clip = saturation amount (0 = soft tanh, higher = more distortion)
-      // These params are already in controls and will be passed through as-is
+    } else if (synthInstrument === 'sbd2') {
+      // Synthesized bass drum - StrudelDirt version (sbd2)
+      // StrudelDirt uses z1/z2/z3/z4 params
+      // z1 = decay offset, z2 = volume ratio, z3 = knock decay, z4 = pitch env depth
+      // Map superdough's sbd params to StrudelDirt's z1-z4
+      if (controls.decay !== undefined && controls.z1 === undefined) {
+        controls.z1 = controls.decay;
+      }
+      // z2, z3, z4 are StrudelDirt-specific, pass through if set
       
       // sbd does NOT apply the 0.3 gain reduction that regular oscillators use
-      // In superdough, sbd uses gainNode(1) for mixing, not gainNode(0.3)
       controls.gain = controls.gain ?? 0.8;
     } else {
       // For other synths (sine, saw, square, triangle, noise variants)
@@ -572,8 +583,8 @@ function hapToOscArgs(hap: any, cps: number): any[] {
     }
     
     // Common envelope handling for most synths (ZZFX, pulse, supersaw, basic oscillators)
-    // sbd has its own built-in envelope and doesn't use strudelEnv* params
-    if (synthInstrument !== 'strudel_sbd') {
+    // sbd2 has its own built-in envelope and doesn't use strudelEnv* params
+    if (synthInstrument !== 'sbd2') {
       // Calculate ADSR values matching superdough's getADSRValues behavior
       // This ensures sustainLevel is set correctly based on which params are specified
       // IMPORTANT: Check rawValue.sustain BEFORE we overwrite controls.sustain with delta

@@ -64,22 +64,63 @@ export class SuperDirtLauncher {
   }
 
   /**
-   * Check if SuperDirt quark is installed
+   * Check if StrudelDirt quark is installed
+   * StrudelDirt is a fork of SuperDirt with Strudel-specific enhancements
    */
-  static isSuperDirtInstalled(): boolean {
+  static isStrudelDirtInstalled(): boolean {
     const home = process.env.HOME || '';
-    const quarksPath = join(home, '.local', 'share', 'SuperCollider', 'downloaded-quarks', 'SuperDirt');
-    return existsSync(quarksPath);
+    // StrudelDirt installs as 'StrudelDirt' in the quarks directory
+    const strudelDirtPath = join(home, '.local', 'share', 'SuperCollider', 'downloaded-quarks', 'StrudelDirt');
+    if (existsSync(strudelDirtPath)) {
+      return true;
+    }
+    // Also check for legacy SuperDirt (we'll use it if StrudelDirt isn't available)
+    const superDirtPath = join(home, '.local', 'share', 'SuperCollider', 'downloaded-quarks', 'SuperDirt');
+    return existsSync(superDirtPath);
   }
 
   /**
-   * Install SuperDirt quark (blocking operation)
+   * Check if SuperDirt quark is installed (legacy alias)
+   * @deprecated Use isStrudelDirtInstalled() instead
+   */
+  static isSuperDirtInstalled(): boolean {
+    return SuperDirtLauncher.isStrudelDirtInstalled();
+  }
+
+  /**
+   * Install StrudelDirt quark from GitHub (blocking operation)
+   * StrudelDirt is a fork of SuperDirt with Strudel-specific features:
+   * - supersaw, superpulse, pulse, sawtooth, triangle synths
+   * - Filter envelopes (lpenv, hpenv, bpenv)
+   * - Juno 60 chorus emulation
+   * - Improved gain staging and filter behavior
    * Returns true if successful, false otherwise
    */
-  static installSuperDirt(): boolean {
+  static installStrudelDirt(): boolean {
+    console.log('[strudeldirt] Installing StrudelDirt quark from GitHub...');
+    try {
+      // Install StrudelDirt from daslyfe's fork
+      // This also installs dependencies (Vowel, etc.)
+      execSync('echo \'Quarks.install("https://github.com/daslyfe/StrudelDirt"); 0.exit;\' | sclang', {
+        stdio: 'inherit',
+        timeout: 180000, // 3 minute timeout (StrudelDirt is larger)
+      });
+      console.log('[strudeldirt] StrudelDirt quark installed successfully');
+      return true;
+    } catch (err) {
+      console.error('[strudeldirt] Failed to install StrudelDirt:', err);
+      // Fall back to regular SuperDirt
+      console.log('[strudeldirt] Falling back to standard SuperDirt...');
+      return SuperDirtLauncher.installSuperDirtFallback();
+    }
+  }
+
+  /**
+   * Install standard SuperDirt quark as fallback
+   */
+  private static installSuperDirtFallback(): boolean {
     console.log('[superdirt] Installing SuperDirt quark...');
     try {
-      // This can take a while as it downloads from GitHub
       execSync('echo \'Quarks.install("SuperDirt"); 0.exit;\' | sclang', {
         stdio: 'inherit',
         timeout: 120000, // 2 minute timeout
@@ -90,6 +131,14 @@ export class SuperDirtLauncher {
       console.error('[superdirt] Failed to install SuperDirt:', err);
       return false;
     }
+  }
+
+  /**
+   * Install SuperDirt quark (legacy alias)
+   * @deprecated Use installStrudelDirt() instead
+   */
+  static installSuperDirt(): boolean {
+    return SuperDirtLauncher.installStrudelDirt();
   }
 
   /**
@@ -296,317 +345,12 @@ s.waitForBoot {
     "*** Strudel soundfont SynthDefs loaded ***".postln;
     
     // ========================================
-    // Oscillator Synths (sine, sawtooth, square, triangle, noise)
-    // These match superdough's basic waveform synths for OSC-only operation
+    // NOTE: Basic oscillator synths (sine, sawtooth, square, triangle, pulse, supersaw, noise)
+    // are provided by StrudelDirt quark. We only define our custom synths here.
+    // StrudelDirt synth names: sine, sawtooth, triangle, pulse, supersaw, superpulse, white, pink, brown, sbd2
     // ========================================
     
-    // Sine wave oscillator (pure tone)
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    // 'sustain' param is the note duration (set by osc-output.ts)
-    // Line.kr with doneAction:2 frees the synth after sustain time
-    // Filtering is handled by the strudel_filter module (not in individual synths)
-    // Vibrato: vib = LFO rate in Hz, vibmod = depth in semitones (default 0.5)
-    // Pitch envelope: penv = depth in semitones, pattack/pdecay/psustain/prelease = ADSR
-    //                 panchor = pivot point (0-1, default = psustain)
-    // FM synthesis: fmi = modulation index, fmh = harmonicity ratio
-    //               fmattack/fmdecay/fmsustain/fmrelease = FM envelope ADSR
-    SynthDef(\\strudel_sine, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                               vib = 0, vibmod = 0.5,
-                               penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                               fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      // Pitch envelope: modulates pitch in semitones with ADSR
-      // panchor = -1 means use psustain as anchor (superdough default)
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      // Map envelope (0-1) to semitones: min = -penv*anchor, max = penv*(1-anchor)
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      
-      // Vibrato: sinusoidal pitch modulation
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      
-      // Combine: base freq * 2^((pitchEnv + vibrato) / 12)
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis: modulator frequency modulates carrier frequency
-      // fmi = modulation index (depth), fmh = harmonicity ratio
-      // modGain = modFreq * fmi (in Hz), modFreq = carrierFreq * fmh
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      
-      // FM envelope: apply ADSR to modulation depth
-      // Check if any FM envelope param is non-default (indicating user wants envelope)
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,  // No envelope - full modulation
-        EnvGen.kr(
-          Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4),
-          gate: 1, doneAction: 0
-        )
-      ]);
-      
-      // FM modulator signal (sine wave) * envelope * modGain
-      fmMod = Select.ar(fmi > 0, [
-        DC.ar(0),
-        SinOsc.ar(fmModFreq) * fmEnv * fmModGain
-      ]);
-      
-      // Carrier with FM: sine(carrierFreq + fmMod)
-      sound = SinOsc.ar(modFreq + fmMod);
-      // Free synth after sustain time (envelope applied by strudel_adsr module)
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_sine (with FM)".postln;
-    
-    // Sawtooth wave oscillator
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    // RMS compensation: SC's Saw.ar has lower RMS than Web Audio's normalized sawtooth
-    // due to band-limiting. Factor of 2.0 matches RMS levels between the two backends.
-    // Vibrato + Pitch envelope + FM support
-    SynthDef(\\strudel_sawtooth, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   vib = 0, vibmod = 0.5,
-                                   penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                                   fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,
-        EnvGen.kr(Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4), gate: 1, doneAction: 0)
-      ]);
-      fmMod = Select.ar(fmi > 0, [DC.ar(0), SinOsc.ar(fmModFreq) * fmEnv * fmModGain]);
-      
-      sound = Saw.ar(modFreq + fmMod) * 2.0;  // RMS compensation for band-limited Saw
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_sawtooth (with FM)".postln;
-    
-    // Alias for sawtooth (superdough uses 'saw')
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_saw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                              vib = 0, vibmod = 0.5,
-                              penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                              fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,
-        EnvGen.kr(Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4), gate: 1, doneAction: 0)
-      ]);
-      fmMod = Select.ar(fmi > 0, [DC.ar(0), SinOsc.ar(fmModFreq) * fmEnv * fmModGain]);
-      
-      sound = Saw.ar(modFreq + fmMod) * 2.0;  // RMS compensation for band-limited Saw
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_saw (with FM)".postln;
-    
-    // Square wave oscillator
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    // RMS compensation: SC's Pulse.ar has lower RMS than Web Audio's normalized square
-    // Vibrato + Pitch envelope + FM support
-    SynthDef(\\strudel_square, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                 vib = 0, vibmod = 0.5,
-                                 penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                                 fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,
-        EnvGen.kr(Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4), gate: 1, doneAction: 0)
-      ]);
-      fmMod = Select.ar(fmi > 0, [DC.ar(0), SinOsc.ar(fmModFreq) * fmEnv * fmModGain]);
-      
-      sound = Pulse.ar(modFreq + fmMod, 0.5) * 1.9;  // RMS compensation for band-limited Pulse
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_square (with FM)".postln;
-    
-    // Triangle wave oscillator
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    // Vibrato + Pitch envelope + FM support
-    SynthDef(\\strudel_triangle, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   vib = 0, vibmod = 0.5,
-                                   penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                                   fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,
-        EnvGen.kr(Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4), gate: 1, doneAction: 0)
-      ]);
-      fmMod = Select.ar(fmi > 0, [DC.ar(0), SinOsc.ar(fmModFreq) * fmEnv * fmModGain]);
-      
-      sound = LFTri.ar(modFreq + fmMod);
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_triangle (with FM)".postln;
-    
-    // Alias for triangle (superdough uses 'tri')
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_tri, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                              vib = 0, vibmod = 0.5,
-                              penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                              fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,
-        EnvGen.kr(Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4), gate: 1, doneAction: 0)
-      ]);
-      fmMod = Select.ar(fmi > 0, [DC.ar(0), SinOsc.ar(fmModFreq) * fmEnv * fmModGain]);
-      
-      sound = LFTri.ar(modFreq + fmMod);
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_tri (with FM)".postln;
-    
-    // White noise generator
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    SynthDef(\\strudel_white, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      sound = WhiteNoise.ar;
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_white".postln;
-    
-    // Pink noise generator - Paul Kellet algorithm to match superdough
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    // Superdough uses 6 IIR filters + delayed sample, summed and scaled by 0.11
-    SynthDef(\\strudel_pink, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound, white;
-      var b0, b1, b2, b3, b4, b5, b6;
-      // Paul Kellet pink noise filter (matches superdough exactly)
-      // FOS.ar(in, a0, a1, b1): y[n] = a0*x[n] + a1*x[n-1] + b1*y[n-1]
-      white = WhiteNoise.ar;
-      b0 = FOS.ar(white, 0.0555179, 0, 0.99886);
-      b1 = FOS.ar(white, 0.0750759, 0, 0.99332);
-      b2 = FOS.ar(white, 0.153852, 0, 0.969);
-      b3 = FOS.ar(white, 0.3104856, 0, 0.8665);
-      b4 = FOS.ar(white, 0.5329522, 0, 0.55);
-      b5 = FOS.ar(white, -0.016898, 0, -0.7616);
-      b6 = Delay1.ar(white * 0.115926);  // b6 = previous white sample
-      sound = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + (white * 0.5362)) * 0.11;
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_pink".postln;
-    
-    // Brown noise generator - matches superdough algorithm exactly
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
-    // Superdough: c[m] = (a + 0.02 * b) / 1.02, a = c[m]
-    // This is: y[n] = (1/1.02) * y[n-1] + (0.02/1.02) * x[n]
-    //        = 0.9804 * y[n-1] + 0.0196 * x[n]
-    // Use FOS.ar(in, a0, a1, b1): y[n] = a0*x[n] + a1*x[n-1] + b1*y[n-1]
-    SynthDef(\\strudel_brown, { |out, freq = 440, sustain = 1, pan = 0, speed = 1|
-      var sound;
-      // Superdough brown noise: y[n] = 0.9804 * y[n-1] + 0.0196 * x[n]
-      sound = FOS.ar(WhiteNoise.ar, 0.0196, 0, 0.9804);
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_brown".postln;
-    
-    s.sync;  // Ensure oscillator SynthDefs are registered with server
-    "*** Strudel oscillator SynthDefs loaded ***".postln;
+    s.sync;
     
     // ========================================
     // ZZFX Chip Sound Synth
@@ -778,202 +522,14 @@ s.waitForBoot {
     "Added: strudel_bytebeat".postln;
     
     // ========================================
-    // Pulse Wave Synth with PWM (pulse width modulation)
-    // Matches superdough's pulse synth with pw, pwrate, pwsweep params
-    // NO internal envelope - the strudel_adsr module applies ADSR to all sounds
+    // NOTE: Pulse, Supersaw, and Synthesized Bass Drum synths
+    // are provided by StrudelDirt quark:
+    // - pulse: PWM synth with z1/z2/z3 params
+    // - supersaw: Detuned unison sawtooth  
+    // - sbd2: Synthesized bass drum
     // ========================================
     
-    SynthDef(\\strudel_pulse, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                pw = 0.5, pwrate = 1, pwsweep = 0, vib = 0, vibmod = 0.5,
-                                penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                                fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, width, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      // Pitch envelope: modulates pitch in semitones with ADSR
-      // panchor = -1 means use psustain as anchor (superdough default)
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      // Map envelope (0-1) to semitones: min = -penv*anchor, max = penv*(1-anchor)
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      
-      // Vibrato: sinusoidal pitch modulation
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      
-      // Combine: base freq * 2^((pitchEnv + vibrato) / 12)
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,
-        EnvGen.kr(Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4), gate: 1, doneAction: 0)
-      ]);
-      fmMod = Select.ar(fmi > 0, [DC.ar(0), SinOsc.ar(fmModFreq) * fmEnv * fmModGain]);
-      
-      // Pulse width modulation: pw oscillates around the base pw value
-      width = pw + (SinOsc.kr(pwrate) * pwsweep);
-      width = width.clip(0.01, 0.99);  // Prevent aliasing at extremes
-      
-      // Gain of 0.7 tuned to match browser superdough output level
-      sound = Pulse.ar(modFreq + fmMod, width) * 0.7;
-      
-      Line.kr(0, 0, sustain, doneAction: 2);
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }).add;
-    "Added: strudel_pulse (with FM)".postln;
-    
-    // ========================================
-    // Supersaw Synth - Multiple detuned sawtooth oscillators
-    // Matches superdough's supersaw with unison, spread, detune params
-    // Uses strudelEnv* params for ADSR envelope
-    // Filtering is handled by the strudel_filter module (not in individual synths)
-    // ========================================
-    
-    SynthDef(\\strudel_supersaw, { |out, freq = 440, sustain = 1, pan = 0, speed = 1,
-                                   unison = 5, spread = 0.4, detune = 0.2, vib = 0, vibmod = 0.5,
-                                   penv = 0, pattack = 0.001, pdecay = 0.001, psustain = 1, prelease = 0.001, panchor = -1,
-                                   fmi = 0, fmh = 1, fmattack = 0.001, fmdecay = 0.001, fmsustain = 1, fmrelease = 0.001|
-      var sound, voices, freqs, pans, gainAdjust, modFreq, vibMod, pitchEnvMod, pitchEnv, penvAnchor;
-      var fmMod, fmEnv, fmModFreq, fmModGain, fmHasEnv;
-      
-      // Pitch envelope: modulates pitch in semitones with ADSR
-      // panchor = -1 means use psustain as anchor (superdough default)
-      penvAnchor = Select.kr(panchor < 0, [panchor, psustain]);
-      pitchEnv = EnvGen.kr(
-        Env.adsr(pattack, pdecay, psustain, prelease, curve: -4),
-        gate: 1, doneAction: 0
-      );
-      // Map envelope (0-1) to semitones: min = -penv*anchor, max = penv*(1-anchor)
-      pitchEnvMod = Select.kr(penv.abs > 0.001, [
-        0,
-        pitchEnv.linlin(0, 1, penv.neg * penvAnchor, penv * (1 - penvAnchor))
-      ]);
-      
-      // Vibrato: sinusoidal pitch modulation
-      vibMod = Select.kr(vib > 0, [0, vibmod * SinOsc.kr(vib)]);
-      
-      // Combine: base freq * 2^((pitchEnv + vibrato) / 12)
-      modFreq = freq * speed * (2 ** ((pitchEnvMod + vibMod) / 12));
-      
-      // FM synthesis: apply to base modFreq before detuning
-      fmModFreq = modFreq * fmh;
-      fmModGain = fmModFreq * fmi;
-      fmHasEnv = (fmattack > 0.001) + (fmdecay > 0.001) + (fmsustain < 1) + (fmrelease > 0.001);
-      fmEnv = Select.kr(fmHasEnv > 0, [
-        1,
-        EnvGen.kr(Env.adsr(fmattack, fmdecay, fmsustain, fmrelease, curve: -4), gate: 1, doneAction: 0)
-      ]);
-      fmMod = Select.ar(fmi > 0, [DC.ar(0), SinOsc.ar(fmModFreq) * fmEnv * fmModGain]);
-      
-      // Clamp unison to reasonable range (1-16 for performance)
-      voices = unison.clip(1, 16);
-      
-      // Generate detuned frequencies for each voice (with FM applied to base)
-      // Spread them evenly from -detune/2 to +detune/2 semitones (matching superdough)
-      // superdough's getUnisonDetune: lerp(-detune*0.5, detune*0.5, i/(voices-1))
-      freqs = Array.fill(16, { |i|
-        var detuneAmount = Select.kr(voices > 1, [
-          0,
-          (i / (voices - 1) - 0.5) * detune  // -detune/2 to +detune/2
-        ]);
-        (modFreq + fmMod) * (2 ** (detuneAmount / 12))
-      });
-      
-      // Pan spread: superdough alternates L/R for odd/even voices using sqrt-based panning
-      // panspread (0-1) controls the amount of stereo separation
-      // WebAudio: panspread_scaled = panspread * 0.5 + 0.5 (maps 0.4 default to 0.7)
-      // gain1 = sqrt(1 - panspread_scaled), gain2 = sqrt(panspread_scaled)
-      // odd voices: L=gain2, R=gain1 (pan left)
-      // even voices: L=gain1, R=gain2 (pan right)
-      // In SC, we approximate this with alternating pan positions
-      pans = Array.fill(16, { |i|
-        var isOdd = (i % 2);  // 0 or 1
-        // Map spread to pan amount: spread=0.4 -> panAmt ~= 0.4 (moderate stereo)
-        // Odd voices pan left (negative), even voices pan right (positive)
-        var panAmt = Select.kr(voices > 1, [0, spread]);
-        Select.kr(isOdd, [panAmt, panAmt.neg])  // Even=right, Odd=left
-      });
-      
-      // Mix all voices with gain compensation
-      // superdough uses: gainAdjustment = 1/sqrt(voices), then applies 0.3 * gainAdjustment to ADSR
-      // Use LFSaw (non-band-limited) for similar loudness to WebAudio's polyBLEP
-      gainAdjust = 1 / voices.sqrt;
-      sound = Mix.fill(16, { |i|
-        var phase = Rand(0, 2);  // Random phase 0-2 (LFSaw iphase range)
-        var sig = LFSaw.ar(freqs[i], phase) * (i < voices);  // Mute unused voices
-        Pan2.ar(sig, pans[i])
-      }) * gainAdjust;
-      
-      // No internal envelope - strudel_adsr module handles ADSR
-      // Just free after sustain duration
-      Line.kr(0, 0, sustain, doneAction: 2);
-
-      Out.ar(out, DirtPan.ar(sound, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\kr, \\kr]).add;
-    "Added: strudel_supersaw (with FM)".postln;
-    
-    // ========================================
-    // Synthesized Bass Drum (sbd)
-    // Matches superdough's sbd synth with decay, pdecay, penv params
-    // Triangle oscillator + brown noise transient + pitch envelope
-    // ========================================
-    
-    SynthDef(\\strudel_sbd, { |out, freq = 55, sustain = 1, pan = 0, speed = 1,
-                              decay = 0.5, pdecay = 0.5, penv = 36, clip = 0|
-      var osc, noise, env, noiseEnv, pitchEnv, mix;
-      var attackhold = 0.02;
-      var noiselvl = 1.2;
-      var noisedecay = 0.025;
-      
-      // Pitch envelope: starts at penv semitones above freq, drops exponentially
-      pitchEnv = EnvGen.kr(
-        Env.new([penv * 100, 0.001], [pdecay], \\exp),
-        doneAction: 0
-      );
-      
-      // Triangle oscillator with pitch envelope
-      osc = LFTri.ar((freq * speed) * (2 ** (pitchEnv / 1200)));
-      
-      // Soft saturation (tanh waveshaper like superdough)
-      osc = (osc * 2).tanh;
-      
-      // Amplitude envelope for oscillator
-      env = EnvGen.kr(
-        Env.new([1, 1, 0.001], [attackhold, decay], \\exp),
-        doneAction: 0
-      );
-      
-      // Brown noise transient
-      noise = FOS.ar(WhiteNoise.ar, 0.0196, 0, 0.9804);
-      noiseEnv = EnvGen.kr(
-        Env.new([noiselvl, 0.001], [noisedecay], \\exp),
-        doneAction: 0
-      );
-      
-      // Mix oscillator and noise
-      mix = (osc * env) + (noise * noiseEnv);
-      
-      // Overall envelope with optional clip
-      mix = mix * EnvGen.kr(
-        Env.new([1, 1, 0], [decay.max(0.01), 0.01]),
-        doneAction: 2
-      );
-      
-      Out.ar(out, DirtPan.ar(mix, ${channels}, pan));
-    }, [\\ir, \\ir, \\ir, \\kr, \\ir, \\kr, \\kr, \\kr]).add;
-    "Added: strudel_sbd".postln;
-    
-    s.sync;  // Ensure new synths are registered
-    "*** Strudel pulse/supersaw/sbd SynthDefs loaded ***".postln;
+    s.sync;  // Ensure custom synths are registered
     
     // ========================================
     // Strudel ADSR Envelope Module (for SAMPLES only)
@@ -1643,10 +1199,10 @@ s.waitForBoot {
       }
     }
 
-    // Check/install SuperDirt quark
-    if (!SuperDirtLauncher.isSuperDirtInstalled()) {
-      console.log('[superdirt] SuperDirt quark not found, installing...');
-      if (!SuperDirtLauncher.installSuperDirt()) {
+    // Check/install StrudelDirt quark (or fall back to SuperDirt)
+    if (!SuperDirtLauncher.isStrudelDirtInstalled()) {
+      console.log('[strudeldirt] StrudelDirt quark not found, installing...');
+      if (!SuperDirtLauncher.installStrudelDirt()) {
         return false;
       }
     }
