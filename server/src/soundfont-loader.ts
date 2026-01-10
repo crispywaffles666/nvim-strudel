@@ -277,6 +277,7 @@ export async function loadSoundfontForSuperDirt(
     
     // Skip malformed zones where keyRangeHigh < keyRangeLow
     if (zone.keyRangeHigh < zone.keyRangeLow) {
+      zone.file = undefined as any; // Free memory
       continue;
     }
     
@@ -286,6 +287,7 @@ export async function loadSoundfontForSuperDirt(
     
     // Skip duplicate pitches (some soundfonts have multiple zones at same pitch)
     if (seenPitches.has(originalMidi)) {
+      zone.file = undefined as any; // Free memory
       continue;
     }
     seenPitches.add(originalMidi);
@@ -294,6 +296,10 @@ export async function loadSoundfontForSuperDirt(
     const outputPath = join(bankDir, `${paddedIndex}_note${originalMidi}.wav`);
     
     const sampleLength = base64ToWav(zone.file, outputPath);
+    
+    // Free memory immediately after conversion
+    zone.file = undefined as any;
+    
     if (sampleLength > 0) {
       // Include loop points if present (for sustain looping)
       const zoneMeta: ZoneMetadata = {
@@ -323,6 +329,14 @@ export async function loadSoundfontForSuperDirt(
       zoneMetadata.push(zoneMeta);
       savedCount++;
     }
+  }
+  
+  // Clear zones array to free memory
+  zones.length = 0;
+  
+  // Hint to GC that we're done with large allocations
+  if (global.gc) {
+    global.gc();
   }
   
   if (savedCount > 0) {

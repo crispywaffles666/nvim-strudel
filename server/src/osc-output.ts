@@ -2,7 +2,7 @@
 import osc from 'osc';
 import { isNote, noteToMidi, midiToFreq } from '@strudel/core/util.mjs';
 import { processValueForOsc, isBankSoundfont } from './sample-metadata.js';
-import { resolveDrumMachineBankSync } from './on-demand-loader.js';
+import { resolveDrumMachineBankSync, isGmSoundfont, getSoundfontCacheName } from './on-demand-loader.js';
 import { captureOscMessage, shouldCaptureOsc } from './file-writer.js';
 
 // Default SuperDirt ports
@@ -271,8 +271,19 @@ function hapToOscArgs(hap: any, cps: number): any[] {
   const duration = hap.duration?.valueOf?.() ?? 1;
   const delta = duration / cps;
 
+  // Handle soundfont variants: s("gm_piano:11") sets n=11 which selects the variant
+  // We need to rewrite to s=gm_piano_v11 before processValueForOsc modifies n
+  let valueToProcess = rawValue;
+  const rawSoundName = rawValue.s || rawValue.sound;
+  if (rawSoundName && isGmSoundfont(rawSoundName) && typeof rawValue.n === 'number' && rawValue.n > 0) {
+    // Rewrite sound name to include variant, clear n so it's set by pitch
+    const cacheName = getSoundfontCacheName(rawSoundName, rawValue.n);
+    valueToProcess = { ...rawValue, s: cacheName };
+    delete valueToProcess.n;  // Let processValueForOsc set n based on pitch
+  }
+
   // Process the value for pitched samples (converts note/freq to n + speed)
-  const processedValue = processValueForOsc(rawValue);
+  const processedValue = processValueForOsc(valueToProcess);
 
   // Start with processed values, then apply defaults for missing fields
   const controls: Record<string, any> = {

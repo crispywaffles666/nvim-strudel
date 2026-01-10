@@ -348,10 +348,18 @@ export function extractSoundNames(code: string): Set<string> {
       // Also handle common mini-notation: bd*4, [bd sd], <bd sd>, bd:2
       const tokens = content.split(/[\s\[\]<>*\/,]+/);
       for (const token of tokens) {
-        // Remove sample index (bd:2 -> bd)
-        const name = token.split(':')[0].trim();
+        // For soundfonts (gm_*), preserve the :n variant suffix
+        // For other sounds, strip the :n sample index
+        const parts = token.split(':');
+        const name = parts[0].trim();
         if (name && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-          sounds.add(name);
+          if (isGmSoundfont(name) && parts.length > 1 && /^\d+$/.test(parts[1])) {
+            // Soundfont with variant index: gm_piano:11 -> gm_piano:11
+            sounds.add(`${name}:${parts[1]}`);
+          } else {
+            // Regular sound or soundfont without variant
+            sounds.add(name);
+          }
         }
       }
     }
@@ -448,10 +456,34 @@ export function extractSamplesCalls(code: string): Array<{ source: string; baseU
 }
 
 /**
- * Check if a sound name is a GM soundfont
+ * Parse a soundfont name that may include a variant index
+ * e.g., "gm_piano:11" -> { baseName: "gm_piano", variant: 11 }
+ *       "gm_piano" -> { baseName: "gm_piano", variant: 0 }
+ */
+export function parseSoundfontName(name: string): { baseName: string; variant: number } | null {
+  const parts = name.split(':');
+  const baseName = parts[0];
+  if (!gmSoundfontNames.has(baseName)) {
+    return null;
+  }
+  const variant = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+  return { baseName, variant: isNaN(variant) ? 0 : variant };
+}
+
+/**
+ * Get the cache name for a soundfont variant
+ * Variant 0 uses just the base name, others use baseName_vN
+ */
+export function getSoundfontCacheName(baseName: string, variant: number): string {
+  return variant === 0 ? baseName : `${baseName}_v${variant}`;
+}
+
+/**
+ * Check if a sound name is a GM soundfont (with or without variant)
  */
 export function isGmSoundfont(name: string): boolean {
-  return gmSoundfontNames.has(name);
+  const baseName = name.split(':')[0];
+  return gmSoundfontNames.has(baseName);
 }
 
 /**
@@ -465,8 +497,10 @@ export function isKnownCdnBank(name: string): boolean {
  * Check if a sound is already cached and ready
  */
 export function isSoundCached(name: string): boolean {
-  if (isGmSoundfont(name)) {
-    return isSoundfontCached(name);
+  const sfInfo = parseSoundfontName(name);
+  if (sfInfo) {
+    const cacheName = getSoundfontCacheName(sfInfo.baseName, sfInfo.variant);
+    return isSoundfontCached(cacheName);
   }
   return isBankCached(name);
 }
@@ -511,8 +545,10 @@ async function loadSound(name: string): Promise<boolean> {
   if (isSoundCached(name)) {
     console.log(`[on-demand] ${name} already cached`);
     // Still need to register metadata for soundfonts if not already registered
-    if (isGmSoundfont(name)) {
-      registerSoundfontFromCache(name);
+    const sfInfo = parseSoundfontName(name);
+    if (sfInfo) {
+      const cacheName = getSoundfontCacheName(sfInfo.baseName, sfInfo.variant);
+      registerSoundfontFromCache(cacheName);
     }
     return true;
   }
@@ -521,16 +557,21 @@ async function loadSound(name: string): Promise<boolean> {
   
   const loadPromise = (async () => {
     try {
-      if (isGmSoundfont(name)) {
-        // Load GM soundfont
-        const fonts = gmInstruments[name];
+      const sfInfo = parseSoundfontName(name);
+      if (sfInfo) {
+        // Load GM soundfont variant
+        const fonts = gmInstruments[sfInfo.baseName];
         if (fonts && fonts.length > 0) {
-          // Pass all font variants - loadSoundfontForSuperDirt will pick the best one
-          const success = await loadSoundfontForSuperDirt(name, fonts);
+          // Get the specific variant (or default to 0)
+          const variantIndex = Math.min(sfInfo.variant, fonts.length - 1);
+          const fontName = fonts[variantIndex];
+          const cacheName = getSoundfontCacheName(sfInfo.baseName, sfInfo.variant);
+          
+          const success = await loadSoundfontForSuperDirt(cacheName, fontName);
           if (success) {
-            console.log(`[on-demand] Loaded soundfont: ${name}`);
+            console.log(`[on-demand] Loaded soundfont: ${cacheName} (variant ${variantIndex}: ${fontName})`);
             // Register metadata for note -> n + speed conversion
-            registerSoundfontFromCache(name);
+            registerSoundfontFromCache(cacheName);
             // Don't notify here - we'll do a single notify after all loads complete
             return true;
           }
@@ -659,8 +700,10 @@ export async function loadSoundsForCode(code: string): Promise<string[]> {
 
   // For cached soundfonts, ensure metadata is registered (needed for OSC note->n+speed)
   for (const name of soundNames) {
-    if (isGmSoundfont(name) && isSoundCached(name)) {
-      registerSoundfontFromCache(name);
+    const sfInfo = parseSoundfontName(name);
+    if (sfInfo && isSoundCached(name)) {
+      const cacheName = getSoundfontCacheName(sfInfo.baseName, sfInfo.variant);
+      registerSoundfontFromCache(cacheName);
     }
   }
 
