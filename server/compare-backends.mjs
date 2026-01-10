@@ -24,18 +24,25 @@ const PYTHON_VENV = join(__dirname, '.venv', 'bin', 'python');
 const COMPARE_SCRIPT = join(__dirname, 'compare-audio.py');
 
 // Default test patterns for --all mode
+// Use patterns with rests (~ ~ ~) to separate notes and clearly see attack/release envelopes
+// This prevents overlapping notes from masking envelope differences
+// Pattern [x ~ ~ ~] plays for 1/4 cycle, then 3/4 cycle of silence
+// At 0.5 cps (default), cycle = 2s, so note = 0.5s, silence = 1.5s
+// This leaves room for attack + release (up to ~1s) without overlap
 const DEFAULT_PATTERNS = [
-  { name: 'sine', pattern: 'note("c4").s("sine").release(0.01)', duration: 2 },
-  { name: 'saw', pattern: 'note("c4").s("saw").release(0.01)', duration: 2 },
-  { name: 'square', pattern: 'note("c4").s("square").release(0.01)', duration: 2 },
-  { name: 'triangle', pattern: 'note("c4").s("triangle").release(0.01)', duration: 2 },
-  { name: 'pulse', pattern: 'note("c4").s("pulse").release(0.1)', duration: 2 },
-  { name: 'supersaw', pattern: 'note("c3").s("supersaw").release(0.5)', duration: 2 },
-  { name: 'white', pattern: 's("white").release(0.01)', duration: 2 },
-  { name: 'pink', pattern: 's("pink").release(0.01)', duration: 2 },
-  { name: 'brown', pattern: 's("brown").release(0.01)', duration: 2 },
-  { name: 'saw-lpf', pattern: 'note("c4").s("saw").lpf(500).release(0.01)', duration: 2 },
-  { name: 'white-hpf', pattern: 's("white").hpf(2000).release(0.01)', duration: 2 },
+  { name: 'sine', pattern: 'note("[c4 ~ ~ ~]").s("sine").release(0.1)', duration: 4 },
+  { name: 'saw', pattern: 'note("[c4 ~ ~ ~]").s("saw").release(0.1)', duration: 4 },
+  { name: 'square', pattern: 'note("[c4 ~ ~ ~]").s("square").release(0.1)', duration: 4 },
+  { name: 'triangle', pattern: 'note("[c4 ~ ~ ~]").s("triangle").release(0.1)', duration: 4 },
+  { name: 'pulse', pattern: 'note("[c4 ~ ~ ~]").s("pulse").release(0.1)', duration: 4 },
+  { name: 'supersaw', pattern: 'note("[c3 ~ ~ ~]").s("supersaw").release(0.3)', duration: 4 },
+  { name: 'white', pattern: 's("[white ~ ~ ~]").release(0.1)', duration: 4 },
+  { name: 'pink', pattern: 's("[pink ~ ~ ~]").release(0.1)', duration: 4 },
+  { name: 'brown', pattern: 's("[brown ~ ~ ~]").release(0.1)', duration: 4 },
+  { name: 'saw-lpf', pattern: 'note("[c4 ~ ~ ~]").s("saw").lpf(500).release(0.1)', duration: 4 },
+  { name: 'white-hpf', pattern: 's("[white ~ ~ ~]").hpf(2000).release(0.1)', duration: 4 },
+  // Test envelope parameters explicitly
+  { name: 'sine-env', pattern: 'note("[c4 ~ ~ ~]").s("sine").attack(0.1).release(0.5)', duration: 4 },
 ];
 
 function ensureTmpDir() {

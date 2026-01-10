@@ -17,6 +17,7 @@
  *   --superdirt-verbose   Show SuperCollider output
  *   --log <path>          Write logs to file
  *   --log-level <level>   Minimum log level: debug, info, warn, error (default: debug)
+ *   --envelope-curve <n>  Envelope curve: -2 = exponential (default), 0 = linear (for testing)
  */
 
 import * as fs from 'fs';
@@ -116,6 +117,7 @@ function parseArgs(): {
   superDirtVerbose: boolean;
   logPath: string | null;
   logLevel: string;
+  envelopeCurve: number | null;
 } {
   const args = process.argv.slice(2);
   const result = {
@@ -128,6 +130,7 @@ function parseArgs(): {
     superDirtVerbose: false,
     logPath: null as string | null,
     logLevel: 'debug',
+    envelopeCurve: null as number | null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -163,6 +166,9 @@ function parseArgs(): {
       case '--log-level':
         result.logLevel = args[++i];
         break;
+      case '--envelope-curve':
+        result.envelopeCurve = parseFloat(args[++i]);
+        break;
     }
   }
 
@@ -185,6 +191,7 @@ async function main() {
   const useOsc = args.useOsc;
   const oscHost = args.oscHost;
   const oscPort = args.oscPort;
+  const envelopeCurve = args.envelopeCurve;
   const autoSuperDirt = args.autoSuperDirt;
   const superDirtVerbose = args.superDirtVerbose;
 
@@ -309,7 +316,11 @@ async function main() {
   // Note: SuperDirt may still be starting in the background, that's OK
   // OSC messages will be sent regardless; they'll be received once SuperDirt is ready
   if (useOsc) {
-    const oscEnabled = await engine.enableOsc(oscHost, oscPort);
+    const oscEnabled = await engine.enableOsc({
+      remoteIp: oscHost,
+      remotePort: oscPort,
+      envelopeCurve: envelopeCurve ?? undefined,
+    });
     if (oscEnabled) {
       console.log(`[strudel-server] OSC output enabled -> ${oscHost}:${oscPort}`);
       

@@ -335,12 +335,13 @@ await new Promise(r => setTimeout(r, 2000));
 
 // Initialize OSC
 console.log('Connecting to SuperCollider via OSC...');
+const envCurve = process.env.STRUDEL_ENVELOPE_CURVE ? parseFloat(process.env.STRUDEL_ENVELOPE_CURVE) : undefined;
 let oscPort;
 try {
-  await initOsc('127.0.0.1', 57120);
+  await initOsc({ remoteIp: '127.0.0.1', remotePort: 57120, envelopeCurve: envCurve });
   oscPort = getOscPort();
   enableOscSampleLoading(oscPort);
-  engine.enableOsc('127.0.0.1', 57120);
+  engine.enableOsc({ remoteIp: '127.0.0.1', remotePort: 57120, envelopeCurve: envCurve });
   engine.setWebAudioEnabled(false);
 } catch (e) {
   console.error(`Failed to connect: ${e.message}`);

@@ -32,6 +32,7 @@ declare module '@strudel/core/util.mjs' {
   export function noteToMidi(note: string, defaultOctave?: number): number;
   export function midiToFreq(midi: number): number;
   export function freqToMidi(freq: number): number;
+  export function valueToMidi(value: { freq?: number; note?: number | string }, fallbackValue?: number): number;
 }
 
 declare module '@strudel/core/repl.mjs' {
