@@ -13,6 +13,7 @@ nvim-strudel brings the Strudel live coding music environment to Neovim, providi
 - LSP support for mini-notation (completions, hover, diagnostics)
 - **Music theory intelligence** - key detection, chord suggestions, scale browser
 - All default Strudel samples available (piano, drums, synths, etc.)
+- **GM Soundfonts** with variant selection (e.g., `gm_piano:11` for Bright Acoustic Piano)
 
 ## Requirements
 
@@ -22,7 +23,7 @@ nvim-strudel brings the Strudel live coding music environment to Neovim, providi
 
 ### Optional: SuperCollider for OSC Backend
 
-The default Web Audio backend works without additional dependencies. For better performance and audio quality, you can optionally use the OSC backend with SuperCollider/SuperDirt.
+The default Web Audio backend works without additional dependencies. For better performance and audio quality, you can optionally use the OSC backend with SuperCollider/StrudelDirt.
 
 #### Requirements
 
@@ -54,16 +55,16 @@ Requires Special Setup [View](nvim-strudel-nixos-setup.md)
 
 #### JACK/Audio Server
 
-On Linux, SuperDirt requires a JACK-compatible audio server. Modern Linux systems typically use **PipeWire**, which provides a JACK-compatible interface automatically:
+On Linux, StrudelDirt requires a JACK-compatible audio server. Modern Linux systems typically use **PipeWire**, which provides a JACK-compatible interface automatically:
 
-- **PipeWire** (recommended): Most modern Linux distributions use PipeWire by default. It provides a JACK-compatible interface, so SuperDirt works out of the box without additional configuration.
+- **PipeWire** (recommended): Most modern Linux distributions use PipeWire by default. It provides a JACK-compatible interface, so StrudelDirt works out of the box without additional configuration.
 
 - **Traditional JACK**: If you're using a dedicated JACK server (jackd), install:
   - Arch: `jack2-dbus` (provides jack_control for D-Bus integration)
   - Debian/Ubuntu: `jackd2`
   - Fedora: `jack-audio-connection-kit-dbus`
 
-**For PipeWire users**: No additional JACK installation is needed. SuperDirt will automatically detect PipeWire and connect to its JACK interface.
+**For PipeWire users**: No additional JACK installation is needed. StrudelDirt will automatically detect PipeWire and connect to its JACK interface.
 
 **For traditional JACK users**: Installing JACK with D-Bus support allows PulseAudio to automatically release the audio device when JACK starts.
 
@@ -313,18 +314,18 @@ The default backend uses Node.js Web Audio API via `node-web-audio-api`. This wo
 **Pros**: No external dependencies beyond Node.js
 **Cons**: Higher CPU usage, potential memory growth with heavy effects
 
-### OSC/SuperDirt
+### OSC/StrudelDirt
 
-An alternative backend that sends OSC messages to SuperDirt running in SuperCollider. This provides better performance and audio quality.
+An alternative backend that sends OSC messages to StrudelDirt running in SuperCollider. This provides better performance and audio quality.
 
-**Pros**: Lower CPU usage, better audio quality, access to SuperDirt effects
+**Pros**: Lower CPU usage, better audio quality, access to StrudelDirt effects
 **Cons**: Requires SuperCollider installation (see [Installing SuperCollider](#optional-supercollidersuperdirt-for-osc-backend))
 
 **Audio Server Detection**: The OSC backend automatically detects your audio server:
 
-- **PipeWire**: On modern Linux, PipeWire provides a JACK-compatible interface. SuperDirt connects to PipeWire automatically.
-- **Traditional JACK**: If a dedicated JACK server is running, SuperDirt connects to it.
-- **No JACK**: If neither is detected, SuperDirt will attempt to start JACK (if available).
+- **PipeWire**: On modern Linux, PipeWire provides a JACK-compatible interface. StrudelDirt connects to PipeWire automatically.
+- **Traditional JACK**: If a dedicated JACK server is running, StrudelDirt connects to it.
+- **No JACK**: If neither is detected, StrudelDirt will attempt to start JACK (if available).
 
 To use OSC instead of Web Audio:
 
@@ -332,27 +333,27 @@ To use OSC instead of Web Audio:
 require('strudel').setup({
   audio = {
     output = 'osc',
-    osc_host = '127.0.0.1',   -- SuperDirt OSC host (default)
-    osc_port = 57120,         -- SuperDirt OSC port (default)
-    auto_superdirt = true,    -- Auto-start SuperDirt if sclang available
+    osc_host = '127.0.0.1',   -- StrudelDirt OSC host (default)
+    osc_port = 57120,         -- StrudelDirt OSC port (default)
+    auto_superdirt = true,    -- Auto-start StrudelDirt if sclang available
   },
 })
 ```
 
 When you run `:StrudelPlay` with OSC backend, nvim-strudel will automatically:
 - Detect PipeWire or JACK audio server
-- Launch SuperDirt with optimized settings
-- Install the SuperDirt quark if not already installed
+- Launch StrudelDirt with optimized settings
+- Install the StrudelDirt quark if not already installed
 
 ### Troubleshooting Audio
 
-**No sound from SuperDirt:**
+**No sound from StrudelDirt:**
 - Check `:StrudelStatus` to verify OSC is connected
 - Look for errors in the Neovim messages (`:messages`)
 - On JACK systems, verify JACK is running: `jack_lsp` should list ports
 - On PipeWire systems, verify PipeWire is running: `pw-cli info 0` should show PipeWire info
 
-**SuperDirt fails to start:**
+**StrudelDirt fails to start:**
 - Ensure SuperCollider is installed: `which sclang`
 - On Linux, check audio server status:
   - PipeWire: `pw-cli info 0` or `systemctl --user status pipewire`
@@ -371,13 +372,51 @@ node dist/index.js [options]
 Command-line options:
 - `--port <port>` - TCP server port (default: 37812)
 - `--host <host>` - TCP server host (default: 127.0.0.1)
-- `--osc` - Enable OSC output to SuperDirt
-- `--osc-host <host>` - SuperDirt host (default: 127.0.0.1)
-- `--osc-port <port>` - SuperDirt port (default: 57120)
-- `--auto-superdirt` - Auto-start SuperDirt if sclang is available
-- `--no-auto-superdirt` - Don't auto-start SuperDirt
+- `--osc` - Enable OSC output to StrudelDirt
+- `--osc-host <host>` - StrudelDirt host (default: 127.0.0.1)
+- `--osc-port <port>` - StrudelDirt port (default: 57120)
+- `--auto-superdirt` - Auto-start StrudelDirt if sclang is available
+- `--no-auto-superdirt` - Don't auto-start StrudelDirt
 
 The server automatically detects PipeWire (preferred on modern Linux) or traditional JACK audio servers. No manual JACK configuration is typically needed.
+
+## GM Soundfonts
+
+nvim-strudel includes all 128 General MIDI instruments as soundfonts. Each instrument has multiple **variants** from different soundfont sources, giving you access to different timbres.
+
+### Basic Usage
+
+```javascript
+// Default variant (0)
+s("gm_piano").note("c4 e4 g4")
+
+// Specific variant - Bright Acoustic Piano
+s("gm_piano:11").note("c4 e4 g4")
+
+// Other GM instruments
+s("gm_violin").note("a3 d4 g4")
+s("gm_acoustic_bass").note("e2 a2 d3")
+```
+
+### Piano Variants
+
+The `gm_piano` instrument has 32 variants covering different piano types:
+
+| Variant | GM Program | Description |
+|---------|------------|-------------|
+| 0-6 | 0 | Acoustic Grand Piano (different sources) |
+| 7-15 | 1 | Bright Acoustic Piano |
+| 16-23 | 2 | Electric Grand Piano |
+| 24-31 | 3 | Honky-tonk Piano |
+
+### How It Works
+
+When you use `s("gm_piano:11")`:
+1. The `:11` suffix selects variant 11 from the soundfont collection
+2. The variant is loaded and cached as `gm_piano_v11`
+3. Pitch-to-sample mapping automatically selects the right sample and playback speed
+
+This is different from regular samples where `:n` selects a sample index (e.g., `bd:3` selects the 4th bass drum sample).
 
 ## Highlighting
 
