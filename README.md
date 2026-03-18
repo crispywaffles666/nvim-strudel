@@ -50,7 +50,7 @@ brew install supercollider
 ```
 
 **NixOS:**
-Requires Special Setup [View](nvim-strudel-nixos-setup.md)
+[See guide](nvim-strudel-nixos-setup.md)
 
 
 #### JACK/Audio Server

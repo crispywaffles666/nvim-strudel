@@ -29,3 +29,6 @@ server/tmp/
 
 # Python virtual environment
 server/.venv/
+
+# Nix
+result
