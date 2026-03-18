@@ -12,7 +12,10 @@
 The `flake.nix` allows you to add it as an input and use the `server` package so no wrapper scripts are needed.
 
 ```nix
-inputs.nvim-strudel.url = "github:Goshujinsama/nvim-strudel";
+inputs.nvim-strudel = {
+  url = "github:Goshujinsama/nvim-strudel";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
 ```
  
 The `server` package exposes two binaries: `strudel-server` and `strudel-lsp`.
@@ -26,16 +29,8 @@ home.packages = [
   inputs.nvim-strudel.packages.${pkgs.system}.server
 ];
 ```
-
-```lua
-require('strudel').setup({
-  server = {
-    cmd = { 'strudel-server' },
-  },
-})
-```
-
-Then, install the plugin through lazy.nvim:
+ 
+Then install the plugin through lazy.nvim without the `build` step since the server is already built by Nix:
 
 ```lua
 {
@@ -85,6 +80,28 @@ in
 }
 ```
  
+To use the OSC backend with the flake, add SuperCollider to `extraPackages` and update the setup call.
+ 
+```nix
+extraPackages = [ strudel-server pkgs.supercollider ];
+```
+ 
+```nix
+extraConfigLua = ''
+  require('strudel').setup({
+    server = {
+      cmd = { "${strudel-server}/bin/strudel-server" },
+    },
+    audio = {
+      output = 'osc',
+      osc_host = '127.0.0.1',
+      osc_port = 57120,
+      auto_superdirt = true,
+    },
+  })
+'';
+```
+
 ## Without flakes
 
 This method shows how to set up nvim-strudel on NixOS without the use of `flake.nix`, which requires special handling for native dependencies.
