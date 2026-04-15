@@ -1,8 +1,119 @@
 # nvim-strudel Setup Guide for NixOS
 
-This guide covers setting up nvim-strudel on NixOS, which requires special handling for native dependencies.
+- [With flakes](#with-flakes)
+  - [Standalone Neovim](#neovim)
+  - [nixvim](#nixvim)
+- [Without flakes](#without-flakes)
+- [SuperCollider / OSC backend](#supercollider--osc-backend)
+- [Troubleshooting](#troubleshooting)
 
-## Initial Setup
+## With flakes
+
+The `flake.nix` allows you to add it as an input and use the `server` package so no wrapper scripts are needed.
+
+```nix
+inputs.nvim-strudel = {
+  url = "github:Goshujinsama/nvim-strudel";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+ 
+The `server` package exposes two binaries: `strudel-server` and `strudel-lsp`.
+
+### Neovim
+
+If you use regular neovim managed with system packages or home-manager you can use this method. Add the server to your packages and point `server.cmd` at it in your Lua config:
+
+```nix
+home.packages = [
+  inputs.nvim-strudel.packages.${pkgs.system}.server
+];
+```
+ 
+Then install the plugin through lazy.nvim without the `build` step since the server is already built by Nix:
+
+```lua
+{
+  'Goshujinsama/nvim-strudel',
+  ft = 'strudel',
+  keys = {
+    { '<C-CR>', '<cmd>StrudelEval<cr>', ft = 'strudel', desc = 'Strudel: Eval' },
+    { '<leader>ss', '<cmd>StrudelStop<cr>', ft = 'strudel', desc = 'Strudel: Stop' },
+  },
+  config = function()
+    require('strudel').setup({
+      server = {
+        cmd = { 'strudel-server' },
+      },
+    })
+  end,
+}
+```
+
+### nixvim
+
+If you use nixvim you can add this to your nixvim configuration.
+
+```nix
+{ pkgs, inputs, ... }:
+
+let
+  nvim-strudel = pkgs.vimUtils.buildVimPlugin {
+    pname = "nvim-strudel";
+    version = "0.1.0";
+    src = inputs.nvim-strudel;
+  };
+  strudel-server = inputs.nvim-strudel.packages.${pkgs.system}.server;
+in
+{
+  programs.nixvim = {
+    extraPlugins = [ nvim-strudel ];
+    extraPackages = [ strudel-server ];
+    extraConfigLua = ''
+      require('strudel').setup({
+        server = {
+          cmd = { "${strudel-server}/bin/strudel-server" },
+        },
+      })
+    '';
+  };
+}
+```
+ 
+To use the OSC backend with the flake, add SuperCollider to `extraPackages` and update the setup call.
+ 
+```nix
+extraPackages = [ strudel-server pkgs.supercollider ];
+```
+ 
+```nix
+extraConfigLua = ''
+  require('strudel').setup({
+    server = {
+      cmd = { "${strudel-server}/bin/strudel-server" },
+    },
+    audio = {
+      output = 'osc',
+      osc_host = '127.0.0.1',
+      osc_port = 57120,
+      auto_superdirt = true,
+    },
+  })
+'';
+```
+
+## Without flakes
+
+This method shows how to set up nvim-strudel on NixOS without the use of `flake.nix`, which requires special handling for native dependencies.
+
+### Why NixOS Needs Special Setup
+
+NixOS doesn't have system-wide libraries in standard paths. The `midi` and `node-web-audio-api` packages require:
+
+- **Build time**: gcc, make, python3, alsa-lib headers
+- **Runtime**: libasound.so.2 (ALSA library)
+
+The wrapper script sets `LD_LIBRARY_PATH` to include the Nix store paths for these libraries.
 
 ### 1. Install the Plugin
 
@@ -122,29 +233,6 @@ npm run build
 # The wrapper script should still exist, but if not, recreate it (see step 2 above)
 ```
 
-## Quick Start Usage
-
-1. Create a file with `.strudel` extension
-2. Write a pattern:
-   ```javascript
-   s("bd sd bd sd").fast(2)
-   ```
-3. Press `Ctrl+Enter` to play (or `:StrudelPlay`)
-4. Press `<leader>ss` to stop
-
-## Common Commands
-
-| Command | Description |
-|---------|-------------|
-| `:StrudelPlay` | Start playback |
-| `:StrudelStop` | Stop playback |
-| `:StrudelPause` | Pause playback |
-| `:StrudelHush` | Immediately silence all sounds |
-| `:StrudelEval` | Evaluate current buffer/selection |
-| `:StrudelStatus` | Show server status |
-| `:StrudelPianoroll` | Toggle piano roll visualization |
-| `:StrudelSamples` | Browse available samples |
-
 ## Troubleshooting
 
 ### Server won't start
@@ -227,15 +315,6 @@ For better audio quality and lower CPU usage:
      -- rest of config...
    })
    ```
-
-## Why NixOS Needs Special Setup
-
-NixOS doesn't have system-wide libraries in standard paths. The `midi` and `node-web-audio-api` packages require:
-
-- **Build time**: gcc, make, python3, alsa-lib headers
-- **Runtime**: libasound.so.2 (ALSA library)
-
-The wrapper script sets `LD_LIBRARY_PATH` to include the Nix store paths for these libraries.
 
 ## Resources
 
