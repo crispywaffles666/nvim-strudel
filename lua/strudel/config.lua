@@ -18,7 +18,7 @@
 ---@field cmd? string[] Custom LSP command
 
 ---@class StrudelAudioConfig
----@field output 'webaudio'|'osc' Audio output backend
+---@field output 'webaudio'|'osc'|'none' Audio output backend
 ---@field osc_host? string SuperDirt OSC host (default: 127.0.0.1)
 ---@field osc_port? number SuperDirt OSC port (default: 57120)
 ---@field auto_superdirt? boolean Auto-start SuperDirt if sclang available
@@ -78,7 +78,7 @@ M.defaults = {
     enabled = true,           -- LSP for mini-notation completions/diagnostics
   },
   audio = {
-    output = 'webaudio',      -- 'webaudio' (Node.js, default) or 'osc' (SuperDirt/SuperCollider)
+    output = 'webaudio',      -- 'webaudio' (Node.js, default), 'osc' (SuperDirt/SuperCollider), or 'none' (highlighting only)
     osc_host = '127.0.0.1',   -- SuperDirt OSC host
     osc_port = 57120,         -- SuperDirt OSC port
     auto_superdirt = true,    -- Auto-start SuperDirt if sclang available

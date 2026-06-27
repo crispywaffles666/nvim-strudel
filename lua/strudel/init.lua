@@ -25,11 +25,13 @@ local function get_server_cmd()
   local plugin_root = utils.get_plugin_root()
   local server_path = plugin_root .. '/server/dist/index.js'
   if vim.fn.filereadable(server_path) == 1 then
-    local cmd = { 'node', server_path }
+    local cmd = { 'nice', '-n', '-10', 'node', server_path }
 
     -- Add audio output configuration
     if config.audio then
-      if config.audio.output == 'osc' then
+      if config.audio.output == 'none' then
+        table.insert(cmd, '--no-audio')
+      elseif config.audio.output == 'osc' then
         table.insert(cmd, '--osc')
         if config.audio.osc_host then
           table.insert(cmd, '--osc-host')
