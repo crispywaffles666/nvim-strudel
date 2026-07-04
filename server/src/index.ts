@@ -118,6 +118,7 @@ function parseArgs(): {
   logPath: string | null;
   logLevel: string;
   envelopeCurve: number | null;
+  noAudio: boolean;
 } {
   const args = process.argv.slice(2);
   const result = {
@@ -131,6 +132,7 @@ function parseArgs(): {
     logPath: null as string | null,
     logLevel: 'debug',
     envelopeCurve: null as number | null,
+    noAudio: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -169,6 +171,9 @@ function parseArgs(): {
       case '--envelope-curve':
         result.envelopeCurve = parseFloat(args[++i]);
         break;
+      case '--no-audio':
+        result.noAudio = true;
+        break;
     }
   }
 
@@ -194,13 +199,20 @@ async function main() {
   const envelopeCurve = args.envelopeCurve;
   const autoSuperDirt = args.autoSuperDirt;
   const superDirtVerbose = args.superDirtVerbose;
+  const noAudio = args.noAudio;
 
   console.log('[strudel-server] Starting server...');
+  if (noAudio) {
+    console.log('[strudel-server] Audio disabled (highlighting only mode)');
+  }
 
   // Create server and engine FIRST so Neovim can connect immediately
   // SuperDirt startup happens in the background (it can take 60-90+ seconds to load samples)
   const server = new StrudelTcpServer(config);
   const engine = new StrudelEngine();
+  if (noAudio) {
+    engine.setWebAudioEnabled(false);
+  }
 
   // Track OSC initialization - playback waits for this if OSC mode is enabled
   // Using an object wrapper to avoid TypeScript narrowing issues with closures
@@ -307,6 +319,7 @@ async function main() {
     process.exit(0);
   };
 
+  if (!noAudio) {
   // Web Audio is always enabled for synth sounds (sine, sawtooth, square, triangle)
   // These only work via superdough, not SuperDirt OSC
   // When OSC is also enabled, sample sounds go to both (SuperDirt for better quality)
@@ -323,12 +336,12 @@ async function main() {
     });
     if (oscEnabled) {
       console.log(`[strudel-server] OSC output enabled -> ${oscHost}:${oscPort}`);
-      
+
       if (superDirtStarting) {
         console.log('[strudel-server] SuperDirt is still loading samples in background...');
         console.log('[strudel-server] Samples will play once SuperDirt is ready');
       }
-      
+
       // Enable sample downloading/caching for SuperDirt
       // This hooks into the samples() function to also download for SuperDirt
       const port = getOscPort();
@@ -340,7 +353,7 @@ async function main() {
     } else {
       console.log('[strudel-server] OSC output failed');
     }
-    
+
     // If we're NOT auto-starting SuperDirt, resolve immediately
     // (user is running SuperDirt externally, so it should already be ready)
     // If we ARE auto-starting, the resolve happens in the SuperDirt .then() callback above
@@ -348,6 +361,7 @@ async function main() {
       oscInit.resolve();
     }
   }
+  } // end if (!noAudio)
 
   // Forward active elements to all clients
   engine.onActive((elements, cycle) => {
